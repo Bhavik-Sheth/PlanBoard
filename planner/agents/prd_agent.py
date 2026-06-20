@@ -1,0 +1,98 @@
+import os
+from pathlib import Path
+from langchain_core.messages import SystemMessage, HumanMessage
+from planner.state import PlannerState
+from planner.files.reader import read_planner_file
+from planner.files.writer import write_planner_file
+from planner.llm import get_llm
+
+PRD_SYSTEM_PROMPT = """You are a Principal Product Manager expert at writing Product Requirements Documents (PRD).
+Your only goal is to generate a comprehensive, clear, and professional `PRD.md` file based on a Structured Idea and any optional Constraints.
+
+The PRD MUST contain the following sections:
+1. **Problem Statement**: Why this app exists and what problem it solves.
+2. **Target Users**: Personas and demographics of who will use the app.
+3. **Core Features**: List of must-have features vs. nice-to-have features.
+4. **Out of Scope**: Explicitly define what the app will NOT do in this phase/version.
+5. **User Stories & Acceptance Criteria**: Clear user scenarios and how to verify they work.
+6. **Success Metrics**: How we measure if the product is successful.
+7. **Edge Cases**: Design consideration for offline behavior, invalid input, concurrent actions, rate limits, etc.
+
+Rules:
+- Write the output in clean, production-ready Markdown.
+- Do NOT wrap your entire output in markdown code block backticks (i.e. do not output ```markdown ... ``` surrounding the whole document). Start writing the markdown content directly.
+- Be specific, detailed, and realistic based on the provided Structured Idea.
+- If any Constraints are provided, ensure the features and scope strictly adhere to them.
+"""
+
+def prd_agent(state: PlannerState) -> PlannerState:
+    """
+    PRD Agent node: reads StructuredIdea.md and Constraints.md from disk,
+    invokes the configured LLM to generate the PRD content, writes it to PRD.md,
+    and updates the state.
+    """
+    planner_dir = Path(state.project_path)
+    structured_idea_path = planner_dir / "StructuredIdea.md"
+    constraints_path = planner_dir / "Constraints.md"
+
+    # Verify StructuredIdea.md exists
+    if not structured_idea_path.exists():
+        raise FileNotFoundError(f"StructuredIdea.md not found at {structured_idea_path}")
+
+    # Read inputs
+    structured_idea = read_planner_file(structured_idea_path, use_cache=False).strip()
+    
+    # If StructuredIdea is empty, stop and request user input
+    if not structured_idea:
+        state.pending_questions = ["The StructuredIdea.md file is empty. Please describe and structure your idea first."]
+        state.status = "needs_input"
+        state.current_file = "PRD.md"
+        return state
+
+    constraints = ""
+    if constraints_path.exists():
+        constraints = read_planner_file(constraints_path, use_cache=False).strip()
+
+    # Build prompt messages
+    user_content = f"Structured Idea:\n{structured_idea}\n"
+    if constraints:
+        user_content += f"\nConstraints:\n{constraints}\n"
+        
+    if state.grill_answers:
+        user_content += f"\nAdditional Details (from user feedback):\n"
+        for q, a in state.grill_answers.items():
+            user_content += f"- Q: {q}\n  A: {a}\n"
+
+    messages = [
+        SystemMessage(content=PRD_SYSTEM_PROMPT),
+        HumanMessage(content=user_content)
+    ]
+
+    # Invoke LLM
+    llm = get_llm()
+    response = llm.invoke(messages)
+    prd_content = response.content
+
+    # Clean up markdown block wrapping if LLM ignored instructions
+    if isinstance(prd_content, str):
+        prd_content_stripped = prd_content.strip()
+        if prd_content_stripped.startswith("```markdown"):
+            prd_content = prd_content_stripped[11:]
+            if prd_content.endswith("```"):
+                prd_content = prd_content[:-3]
+        elif prd_content_stripped.startswith("```"):
+            prd_content = prd_content_stripped[3:]
+            if prd_content.endswith("```"):
+                prd_content = prd_content[:-3]
+        prd_content = prd_content.strip()
+
+    # Write PRD.md to disk (forcing overwrite since this is the agent's output draft)
+    prd_path = planner_dir / "PRD.md"
+    write_planner_file(prd_path, prd_content, force=True)
+
+    # Update state
+    state.current_file = "PRD.md"
+    state.structured_idea = structured_idea
+    state.status = "drafting"
+    
+    return state

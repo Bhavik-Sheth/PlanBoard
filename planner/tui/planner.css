@@ -1,0 +1,64 @@
+/* planner/tui/planner.css */
+
+Screen {
+    background: #0d1117;
+}
+
+Horizontal {
+    width: 100%;
+    height: 100%;
+}
+
+#file-tree {
+    width: 28;
+    height: 100%;
+    border: solid #2f81f7;
+    border-title-align: left;
+    background: #0d1117;
+    color: #c9d1d9;
+}
+
+#file-tree:focus {
+    border: double #2f81f7;
+}
+
+#right-pane {
+    width: 1fr;
+    height: 100%;
+}
+
+#architecture-panel {
+    height: 8;
+    border: solid #3fb950;
+    border-title-align: left;
+    background: #0d1117;
+    color: #c9d1d9;
+}
+
+#architecture-panel:focus {
+    border: double #3fb950;
+}
+
+#viewer-panel {
+    height: 1fr;
+    border: solid #c9d1d9;
+    border-title-align: left;
+    background: #0d1117;
+    color: #c9d1d9;
+}
+
+#viewer-panel:focus {
+    border: double #ffffff;
+}
+
+#chat-input {
+    height: 3;
+    border: solid #f0883e;
+    border-title-align: left;
+    background: #0d1117;
+    color: #c9d1d9;
+}
+
+#chat-input:focus {
+    border: double #f0883e;
+}
