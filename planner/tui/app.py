@@ -22,30 +22,8 @@ from planner.tui.widgets.file_tree import PlannerFileTree
 from planner.tui.widgets.viewer_panel import ViewerPanel
 
 
-# ---------------------------------------------------------------------------
-# Fix 5: Single source of truth for filename → agent mappings.
-# All reset/change-request dispatchers in this file use _resolve_agent().
-# ---------------------------------------------------------------------------
-_FILE_AGENT_MAP: dict[str, str] = {
-    "StructuredIdea.md":     "structuring",
-    "PRD.md":                "prd",
-    "TRD.md":                "trd",
-    "Schema.md":             "schema",
-    "DesignDecisions.md":    "design",
-    "AppFlow.md":            "appflow",
-    "Rules.md":              "rules",
-    "ImplementationPlan.md": "implementation",
-    "Tracker.md":            "tracker",
-}
+from planner.utils import resolve_relative_path, resolve_agent
 
-
-def _resolve_agent(filename: str) -> str | None:
-    """Return the owning agent name for a planning filename, including subdir prefixes."""
-    if filename.startswith("MODULES/"):
-        return "modules"
-    if filename.startswith("ARCHITECTURE_DIAGRAMS/"):
-        return "diagram"
-    return _FILE_AGENT_MAP.get(filename)
 
 class PlannerApp(App):
     """The main TUI Application for PlannerX."""
@@ -58,6 +36,8 @@ class PlannerApp(App):
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+q", "quit", "Quit"),
         ("escape", "focus_chat", "Focus Chat"),
+        ("ctrl+e", "toggle_architecture", "Expand/Collapse Architecture"),
+        ("f2", "toggle_architecture", "Expand/Collapse Architecture"),
     ]
 
     def __init__(self, planner_path: Path | None = None, **kwargs) -> None:
@@ -95,6 +75,7 @@ class PlannerApp(App):
         # Set panel titles
         self.query_one("#file-tree").border_title = "FILE VIEW"
         self.query_one("#architecture-panel").border_title = "ARCHITECTURE PANEL"
+        self.query_one("#architecture-panel").border_subtitle = "Ctrl+E or F2 to Maximize"
         self.query_one("#viewer-panel").border_title = "RESPONSE / VIEWER PANEL"
         self.query_one("#chat-input").border_title = "CHAT INPUT"
 
@@ -212,6 +193,27 @@ class PlannerApp(App):
     def action_focus_chat(self) -> None:
         """Focus the Chat Input panel."""
         self.query_one("#chat-input").focus()
+
+    def action_toggle_architecture(self) -> None:
+        """Toggle the architecture panel expansion."""
+        arch_panel = self.query_one("#architecture-panel")
+        viewer_panel = self.query_one("#viewer-panel")
+        chat_input = self.query_one("#chat-input")
+        
+        is_expanding = not arch_panel.has_class("expanded")
+        
+        arch_panel.toggle_class("expanded")
+        viewer_panel.toggle_class("collapsed")
+        chat_input.toggle_class("collapsed")
+        
+        if is_expanding:
+            arch_panel.border_title = "ARCHITECTURE PANEL (MAXIMIZED)"
+            arch_panel.border_subtitle = "Ctrl+E or F2 to Minimize"
+            arch_panel.focus()
+        else:
+            arch_panel.border_title = "ARCHITECTURE PANEL"
+            arch_panel.border_subtitle = "Ctrl+E or F2 to Maximize"
+            chat_input.focus()
 
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
         """Handle file selection from the file tree, opening the file in the Viewer Panel."""
@@ -374,6 +376,10 @@ class PlannerApp(App):
                 self.query_one("#viewer-panel").write_output("[red]Please specify a file to approve, e.g. `/approve PRD.md`[/red]")
                 return
 
+        resolved = resolve_relative_path(self.planner_path, filename)
+        if resolved:
+            filename = resolved
+
         target_path = self.planner_path / filename
         if not target_path.exists():
             self.query_one("#viewer-panel").write_output(f"[red]Error: {filename} not found in PLANNER/.[/red]")
@@ -412,6 +418,10 @@ class PlannerApp(App):
                 self.query_one("#viewer-panel").write_output("[red]Please specify a file to reset, e.g. `/reset PRD.md`[/red]")
                 return
 
+        resolved = resolve_relative_path(self.planner_path, filename)
+        if resolved:
+            filename = resolved
+
         target_path = self.planner_path / filename
         if not target_path.exists():
             self.query_one("#viewer-panel").write_output(f"[red]Error: {filename} not found in PLANNER/.[/red]")
@@ -429,8 +439,9 @@ class PlannerApp(App):
             print(f"🗑 Clearing {filename}...")
             target_path.write_text("", encoding="utf-8")
 
-            # Fix 5: use module-level _resolve_agent() — single source of truth
-            agent_name = _resolve_agent(filename)
+            # Fix 5: use module-level resolve_agent() — single source of truth
+            agent_name = resolve_agent(filename)
+
 
             if not agent_name:
                 print(f"No agent associated with {filename}. File cleared.")
@@ -740,6 +751,9 @@ class PlannerApp(App):
                 if not target:
                     print("[red]No target file resolved to approve.[/red]")
                     return
+                resolved = resolve_relative_path(self.planner_path, target)
+                if resolved:
+                    target = resolved
                 target_path = self.planner_path / target
                 if not target_path.exists():
                     print(f"[red]Error: {target} not found in PLANNER/.[/red]")
@@ -771,6 +785,9 @@ class PlannerApp(App):
                 if not target:
                     print("[red]No target file resolved to reset.[/red]")
                     return
+                resolved = resolve_relative_path(self.planner_path, target)
+                if resolved:
+                    target = resolved
                 target_path = self.planner_path / target
                 if not target_path.exists():
                     print(f"[red]Error: {target} not found in PLANNER/.[/red]")
@@ -787,9 +804,9 @@ class PlannerApp(App):
                 print(f"🗑 Clearing {target}...")
                 target_path.write_text("", encoding="utf-8")
 
-                # Fix 5+6: use _resolve_agent() which correctly handles MODULES/ and
+                # Fix 5+6: use resolve_agent() which correctly handles MODULES/ and
                 # ARCHITECTURE_DIAGRAMS/ prefixes (previously this block was missing them).
-                agent_name = _resolve_agent(target)
+                agent_name = resolve_agent(target)
                 if not agent_name:
                     print(f"No agent associated with {target}. File cleared.")
                     return
@@ -882,6 +899,9 @@ class PlannerApp(App):
                 if not target:
                     print("[red]No target file resolved for change request.[/red]")
                     return
+                resolved = resolve_relative_path(self.planner_path, target)
+                if resolved:
+                    target = resolved
                 target_path = self.planner_path / target
                 if not target_path.exists():
                     print(f"[red]Error: {target} not found in PLANNER/.[/red]")
@@ -904,8 +924,8 @@ class PlannerApp(App):
                 print(f"⏳ Sending change request to agent...")
                 print(f"  ▶ Feedback: {text_content}")
 
-                # Fix 5: use _resolve_agent() — single source of truth
-                agent_name = _resolve_agent(target)
+                # Fix 5: use resolve_agent() — single source of truth
+                agent_name = resolve_agent(target)
 
                 if not agent_name:
                     print(f"No agent associated with {target}. Feedback cannot be processed.")

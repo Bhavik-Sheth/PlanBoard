@@ -33,6 +33,15 @@ Horizontal {
     border-title-align: left;
     background: #000000;
     color: #c9d1d9;
+    overflow-y: auto;
+}
+
+#architecture-panel.expanded {
+    height: 1fr;
+}
+
+.collapsed {
+    display: none;
 }
 
 #architecture-panel:focus {

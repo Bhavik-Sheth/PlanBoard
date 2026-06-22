@@ -25,6 +25,7 @@ _PLACEHOLDER = Text.assemble(
 
 class ArchitecturePanel(Static):
     """Top-right panel — displays SystemArchitecture.md (or SystemDesign.md) as rendered Markdown."""
+    can_focus = True
 
     def __init__(self, planner_path: Path, **kwargs) -> None:
         super().__init__(**kwargs)

@@ -147,6 +147,10 @@ def status_cmd() -> None:
 def approve_cmd(file: str = typer.Argument(..., help="Filename to approve, e.g. PRD.md")) -> None:
     """Mark a planning file as approved in Tracker.md."""
     planner_dir = _planner_dir()
+    from planner.utils import resolve_relative_path
+    resolved = resolve_relative_path(planner_dir, file)
+    if resolved:
+        file = resolved
     target = planner_dir / file
     if not target.exists():
         typer.echo(f"[ERROR] {file} not found in PLANNER/.", err=True)
@@ -184,6 +188,10 @@ def approve_cmd(file: str = typer.Argument(..., help="Filename to approve, e.g. 
 def reset_cmd(file: str = typer.Argument(..., help="Filename to reset and re-run, e.g. PRD.md")) -> None:
     """Clear a planning file and re-run its agent (requires confirmation)."""
     planner_dir = _planner_dir()
+    from planner.utils import resolve_relative_path, resolve_agent
+    resolved = resolve_relative_path(planner_dir, file)
+    if resolved:
+        file = resolved
     target = planner_dir / file
 
     if not target.exists():
@@ -200,24 +208,7 @@ def reset_cmd(file: str = typer.Argument(..., help="Filename to reset and re-run
     typer.echo(f"🗑  {file} cleared.")
 
     # Re-run the appropriate agent
-    _AGENT_MAP = {
-        "StructuredIdea.md":  "structuring",
-        "PRD.md":             "prd",
-        "TRD.md":             "trd",
-        "Schema.md":          "schema",
-        "DesignDecisions.md": "design",
-        "AppFlow.md":         "appflow",
-        "Rules.md":           "rules",
-        "ImplementationPlan.md": "implementation",
-        "Tracker.md":         "tracker",
-    }
-    agent_name = None
-    if file.startswith("MODULES/"):
-        agent_name = "modules"
-    elif file.startswith("ARCHITECTURE_DIAGRAMS/"):
-        agent_name = "diagram"
-    else:
-        agent_name = _AGENT_MAP.get(file)
+    agent_name = resolve_agent(file)
 
     if not agent_name:
         typer.echo(f"[WARN] No agent known for {file}. File cleared but not re-run.")
