@@ -5,6 +5,7 @@ ViewerPanel — mid-right panel that renders either live agent text logs
 or file content when a file is selected in the directory tree.
 """
 
+from collections import deque
 from pathlib import Path
 from rich.markdown import Markdown
 from textual.widgets import RichLog
@@ -19,7 +20,9 @@ class ViewerPanel(RichLog):
         kwargs.setdefault("wrap", True)
         super().__init__(**kwargs)
         self.mode = "output"
-        self.output_buffer = []
+        # Use a bounded deque to prevent unbounded memory growth in long sessions.
+        # Oldest lines are automatically evicted when the cap is reached.
+        self.output_buffer: deque[str] = deque(maxlen=500)
 
     def write_output(self, text: str) -> None:
         """Append a log line in output mode, switching back to output mode if in file mode."""

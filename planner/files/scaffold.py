@@ -1,6 +1,10 @@
 import os
 from pathlib import Path
 
+# NOTE: CLAUDE.md is intentionally excluded from PLANNER_FILES.
+# It is the final compiled output written by `planner finalize` directly to the
+# PROJECT ROOT (not inside PLANNER/). Scaffolding it here would create a stale
+# empty PLANNER/CLAUDE.md that conflicts with the real root-level file.
 PLANNER_FILES = [
     "RawIdea.md",
     "Constraints.md",
@@ -13,7 +17,6 @@ PLANNER_FILES = [
     "ImplementationPlan.md",
     "Tracker.md",
     "Rules.md",
-    "CLAUDE.md",
 ]
 
 DIAGRAM_FILES = [

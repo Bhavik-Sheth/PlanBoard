@@ -546,13 +546,13 @@ dependencies = [
     { name = "rich" },
     { name = "textual" },
     { name = "typer" },
+    { name = "watchfiles" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "pytest-mock" },
-    { name = "watchfiles" },
 ]
 
 [package.metadata]
@@ -567,13 +567,13 @@ requires-dist = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "textual", specifier = ">=8.2.7" },
     { name = "typer", specifier = ">=0.26.7" },
+    { name = "watchfiles", specifier = ">=1.2.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
-    { name = "watchfiles", specifier = ">=1.2.0" },
 ]
 
 [[package]]

@@ -74,5 +74,8 @@ def tracker_agent(state: PlannerState) -> PlannerState:
 
     state.current_file = "Tracker.md"
     state.status = "drafting"
-    state.next_agent = "modules"
+    # Route back to orchestrator to evaluate whether the pipeline is fully complete.
+    # Do NOT route to "modules" here — modules are triggered explicitly by the user,
+    # not as part of the main planning sequence.
+    state.next_agent = "orchestrator"
     return state

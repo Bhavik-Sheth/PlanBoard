@@ -50,5 +50,8 @@ def structuring_agent(state: PlannerState) -> PlannerState:
     state.structured_idea = content
     state.current_file = "StructuredIdea.md"
     state.status = "drafting"
-    state.next_agent = "prd"
+    # Route to orchestrator so it evaluates the sequence naturally.
+    # Do NOT hardcode "prd" here — the orchestrator will detect StructuredIdea.md
+    # is populated and advance to the next unpopulated file in its sequence.
+    state.next_agent = "orchestrator"
     return state

@@ -1,10 +1,9 @@
-import os
 from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from planner.state import PlannerState
 from planner.files.reader import read_planner_file
 from planner.files.writer import write_planner_file
-from planner.llm import get_llm
+from planner.agents._base import invoke_llm_safe, strip_markdown_fence
 
 PRD_SYSTEM_PROMPT = """You are a Principal Product Manager expert at writing Product Requirements Documents (PRD).
 Your only goal is to generate a comprehensive, clear, and professional `PRD.md` file based on a Structured Idea and any optional Constraints.
@@ -41,12 +40,13 @@ def prd_agent(state: PlannerState) -> PlannerState:
 
     # Read inputs
     structured_idea = read_planner_file(structured_idea_path, use_cache=False).strip()
-    
+
     # If StructuredIdea is empty, stop and request user input
     if not structured_idea:
         state.pending_questions = ["The StructuredIdea.md file is empty. Please describe and structure your idea first."]
         state.status = "needs_input"
         state.current_file = "PRD.md"
+        state.calling_agent = "prd"  # Fix 2: ensure griller returns to prd_agent after collecting answers
         return state
 
     constraints = ""
@@ -57,7 +57,7 @@ def prd_agent(state: PlannerState) -> PlannerState:
     user_content = f"Structured Idea:\n{structured_idea}\n"
     if constraints:
         user_content += f"\nConstraints:\n{constraints}\n"
-        
+
     if state.grill_answers:
         user_content += f"\nAdditional Details (from user feedback):\n"
         for q, a in state.grill_answers.items():
@@ -68,23 +68,8 @@ def prd_agent(state: PlannerState) -> PlannerState:
         HumanMessage(content=user_content)
     ]
 
-    # Invoke LLM
-    llm = get_llm()
-    response = llm.invoke(messages)
-    prd_content = response.content
-
-    # Clean up markdown block wrapping if LLM ignored instructions
-    if isinstance(prd_content, str):
-        prd_content_stripped = prd_content.strip()
-        if prd_content_stripped.startswith("```markdown"):
-            prd_content = prd_content_stripped[11:]
-            if prd_content.endswith("```"):
-                prd_content = prd_content[:-3]
-        elif prd_content_stripped.startswith("```"):
-            prd_content = prd_content_stripped[3:]
-            if prd_content.endswith("```"):
-                prd_content = prd_content[:-3]
-        prd_content = prd_content.strip()
+    # Fix 1: use invoke_llm_safe (consistent with all other agents, gives user retry prompt on failure)
+    prd_content = strip_markdown_fence(invoke_llm_safe(messages))
 
     # Write PRD.md to disk (forcing overwrite since this is the agent's output draft)
     prd_path = planner_dir / "PRD.md"
@@ -94,5 +79,5 @@ def prd_agent(state: PlannerState) -> PlannerState:
     state.current_file = "PRD.md"
     state.structured_idea = structured_idea
     state.status = "drafting"
-    
+
     return state

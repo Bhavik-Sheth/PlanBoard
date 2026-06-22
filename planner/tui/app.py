@@ -9,6 +9,7 @@ import builtins
 import contextlib
 import queue
 import sys
+import threading
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -20,6 +21,31 @@ from planner.tui.widgets.chat_input import ChatInput
 from planner.tui.widgets.file_tree import PlannerFileTree
 from planner.tui.widgets.viewer_panel import ViewerPanel
 
+
+# ---------------------------------------------------------------------------
+# Fix 5: Single source of truth for filename → agent mappings.
+# All reset/change-request dispatchers in this file use _resolve_agent().
+# ---------------------------------------------------------------------------
+_FILE_AGENT_MAP: dict[str, str] = {
+    "StructuredIdea.md":     "structuring",
+    "PRD.md":                "prd",
+    "TRD.md":                "trd",
+    "Schema.md":             "schema",
+    "DesignDecisions.md":    "design",
+    "AppFlow.md":            "appflow",
+    "Rules.md":              "rules",
+    "ImplementationPlan.md": "implementation",
+    "Tracker.md":            "tracker",
+}
+
+
+def _resolve_agent(filename: str) -> str | None:
+    """Return the owning agent name for a planning filename, including subdir prefixes."""
+    if filename.startswith("MODULES/"):
+        return "modules"
+    if filename.startswith("ARCHITECTURE_DIAGRAMS/"):
+        return "diagram"
+    return _FILE_AGENT_MAP.get(filename)
 
 class PlannerApp(App):
     """The main TUI Application for PlannerX."""
@@ -38,7 +64,9 @@ class PlannerApp(App):
         super().__init__(**kwargs)
         self.planner_path = planner_path or (Path.cwd() / "PLANNER")
         self.input_queue = queue.Queue()
-        self.waiting_for_input = False
+        # Fix 10: use threading.Event instead of a plain bool for thread-safe
+        # cross-thread signaling between the Textual main thread and worker threads.
+        self._input_event = threading.Event()
         self.current_selected_file = None
         self.chat_history = []
 
@@ -156,7 +184,7 @@ class PlannerApp(App):
                     sys.stdout.flush()
 
                 # Signal that we are waiting for user input
-                self.waiting_for_input = True
+                self._input_event.set()
 
                 # Retrieve from queue (blocks until user submits response)
                 ans = self.input_queue.get()
@@ -177,7 +205,7 @@ class PlannerApp(App):
                     write_to_viewer(f"[red]Error: {e}[/red]")
                 finally:
                     builtins.input = original_input
-                    self.waiting_for_input = False
+                    self._input_event.clear()
 
         self.run_worker(worker, thread=True)
 
@@ -198,8 +226,8 @@ class PlannerApp(App):
             return
 
         # 1. If we are waiting for grilling/confirmation input
-        if self.waiting_for_input:
-            self.waiting_for_input = False
+        if self._input_event.is_set():
+            self._input_event.clear()
             viewer = self.query_one("#viewer-panel")
             viewer.write_output(f"[bold cyan]Answer: {cmd}[/bold cyan]")
             self.input_queue.put(cmd)
@@ -401,24 +429,8 @@ class PlannerApp(App):
             print(f"🗑 Clearing {filename}...")
             target_path.write_text("", encoding="utf-8")
 
-            _AGENT_MAP = {
-                "StructuredIdea.md":  "structuring",
-                "PRD.md":             "prd",
-                "TRD.md":             "trd",
-                "Schema.md":          "schema",
-                "DesignDecisions.md": "design",
-                "AppFlow.md":         "appflow",
-                "Rules.md":           "rules",
-                "ImplementationPlan.md": "implementation",
-                "Tracker.md":         "tracker",
-            }
-            agent_name = None
-            if filename.startswith("MODULES/"):
-                agent_name = "modules"
-            elif filename.startswith("ARCHITECTURE_DIAGRAMS/"):
-                agent_name = "diagram"
-            else:
-                agent_name = _AGENT_MAP.get(filename)
+            # Fix 5: use module-level _resolve_agent() — single source of truth
+            agent_name = _resolve_agent(filename)
 
             if not agent_name:
                 print(f"No agent associated with {filename}. File cleared.")
@@ -775,25 +787,27 @@ class PlannerApp(App):
                 print(f"🗑 Clearing {target}...")
                 target_path.write_text("", encoding="utf-8")
 
-                _AGENT_MAP = {
-                    "StructuredIdea.md":  "structuring",
-                    "PRD.md":             "prd",
-                    "TRD.md":             "trd",
-                    "Schema.md":          "schema",
-                    "DesignDecisions.md": "design",
-                    "AppFlow.md":         "appflow",
-                    "Rules.md":           "rules",
-                    "ImplementationPlan.md": "implementation",
-                    "Tracker.md":         "tracker",
-                }
-                agent_name = _AGENT_MAP.get(target)
+                # Fix 5+6: use _resolve_agent() which correctly handles MODULES/ and
+                # ARCHITECTURE_DIAGRAMS/ prefixes (previously this block was missing them).
+                agent_name = _resolve_agent(target)
                 if not agent_name:
                     print(f"No agent associated with {target}. File cleared.")
                     return
 
-                print(f"⏳ Re-running {agent_name} agent...")
-                from planner.main import _run_single_agent
-                _run_single_agent(str(self.planner_path), agent_name)
+                # Extract module name for modules agent
+                if agent_name == "modules":
+                    module_name = target.split("/")[-1].replace(".md", "")
+                    print(f"⏳ Re-running modules agent for '{module_name}'...")
+                    from planner.main import _run_single_agent
+                    _run_single_agent(str(self.planner_path), agent_name, module_name)
+                elif agent_name == "diagram":
+                    print(f"⏳ Re-running diagram agent...")
+                    from planner.agents.architecture_diagram_agent import generate_diagrams
+                    generate_diagrams(str(self.planner_path))
+                else:
+                    print(f"⏳ Re-running {agent_name} agent...")
+                    from planner.main import _run_single_agent
+                    _run_single_agent(str(self.planner_path), agent_name, target)
                 print(f"✅ {target} regenerated.")
 
                 def reload_view():
@@ -890,24 +904,8 @@ class PlannerApp(App):
                 print(f"⏳ Sending change request to agent...")
                 print(f"  ▶ Feedback: {text_content}")
 
-                _AGENT_MAP = {
-                    "StructuredIdea.md":  "structuring",
-                    "PRD.md":             "prd",
-                    "TRD.md":             "trd",
-                    "Schema.md":          "schema",
-                    "DesignDecisions.md": "design",
-                    "AppFlow.md":         "appflow",
-                    "Rules.md":           "rules",
-                    "ImplementationPlan.md": "implementation",
-                    "Tracker.md":         "tracker",
-                }
-                agent_name = None
-                if target.startswith("MODULES/"):
-                    agent_name = "modules"
-                elif target.startswith("ARCHITECTURE_DIAGRAMS/"):
-                    agent_name = "diagram"
-                else:
-                    agent_name = _AGENT_MAP.get(target)
+                # Fix 5: use _resolve_agent() — single source of truth
+                agent_name = _resolve_agent(target)
 
                 if not agent_name:
                     print(f"No agent associated with {target}. Feedback cannot be processed.")

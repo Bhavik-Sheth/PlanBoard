@@ -1,10 +1,9 @@
 """
 planner/tui/widgets/architecture_panel.py
 
-ArchitecturePanel — top-right panel that renders the active .mmd diagram
-using Rich's Syntax highlighter (mermaid lexer).
-
-Provides refresh_diagram(path) so Phase 7 can update it live.
+ArchitecturePanel — top-right panel that renders SystemArchitecture.md
+(or SystemDesign.md as fallback) from the ARCHITECTURE_DIAGRAMS/ directory
+using rich.markdown.Markdown. Refreshes live when diagram files change.
 """
 
 from pathlib import Path
@@ -25,7 +24,7 @@ _PLACEHOLDER = Text.assemble(
 
 
 class ArchitecturePanel(Static):
-    """Top-right panel — renders the active Mermaid architecture diagram."""
+    """Top-right panel — displays SystemArchitecture.md (or SystemDesign.md) as rendered Markdown."""
 
     def __init__(self, planner_path: Path, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -36,8 +35,8 @@ class ArchitecturePanel(Static):
 
     def refresh_diagram(self, path: Path | None = None) -> None:
         """
-        Load and display a Mermaid diagram from *path*.
-        Falls back to SystemArchitecture.mmd, then SystemDesign.mmd.
+        Load and display a Markdown architecture document from *path*.
+        Falls back to SystemArchitecture.md, then SystemDesign.md.
         Shows a placeholder when no diagram content is available.
         """
         candidates = (
