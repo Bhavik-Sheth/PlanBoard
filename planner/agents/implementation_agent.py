@@ -30,19 +30,35 @@ Rules:
 """
 
 
-def implementation_agent(state: PlannerState) -> PlannerState:
-    """Generate ImplementationPlan.md from PRD + TRD + Schema."""
+def _gather(state: PlannerState) -> PlannerState:
+    ctx = load_context(state, "PRD.md", "TRD.md", "Schema.md")
+    prd_content = ctx.get("PRD.md", "").strip()
+    trd_content = ctx.get("TRD.md", "").strip()
+    schema_content = ctx.get("Schema.md", "").strip()
+
+    questions = []
+    if not prd_content:
+        questions.append("PRD.md is missing — cannot write ImplementationPlan without it")
+    if not trd_content:
+        questions.append("TRD.md is missing — cannot write ImplementationPlan without it")
+    if not schema_content:
+        questions.append("Schema.md is missing — cannot write ImplementationPlan without it")
+
+    state.pending_questions = questions
+    if questions:
+        state.status = "needs_input"
+        state.calling_agent = "implementation"
+    else:
+        state.status = "drafting"
+    return state
+
+
+def _write(state: PlannerState) -> PlannerState:
     ctx = load_context(state, "PRD.md", "TRD.md", "Schema.md")
 
     prd_content = ctx.get("PRD.md", "").strip()
     trd_content = ctx.get("TRD.md", "").strip()
     schema_content = ctx.get("Schema.md", "").strip()
-
-    if not prd_content and not trd_content:
-        state.pending_questions = ["PRD.md and TRD.md are empty. Cannot generate implementation plan."]
-        state.status = "needs_input"
-        state.calling_agent = "implementation"
-        return state
 
     user_content = ""
     if prd_content:
@@ -67,4 +83,14 @@ def implementation_agent(state: PlannerState) -> PlannerState:
     state.current_file = "ImplementationPlan.md"
     state.status = "drafting"
     state.next_agent = "tracker"
+    state.phase = "done"
+    return state
+
+
+def implementation_agent(state: PlannerState) -> PlannerState:
+    """Generate ImplementationPlan.md from PRD + TRD + Schema, using gather/write phases."""
+    if state.phase == "gather":
+        return _gather(state)
+    elif state.phase == "write":
+        return _write(state)
     return state

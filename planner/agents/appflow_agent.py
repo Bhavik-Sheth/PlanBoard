@@ -28,19 +28,34 @@ Rules:
 """
 
 
-def appflow_agent(state: PlannerState) -> PlannerState:
-    """Generate AppFlow.md — only for projects with a frontend."""
+def _gather(state: PlannerState) -> PlannerState:
+    ctx = load_context(state, "StructuredIdea.md", "PRD.md")
+    structured_idea = ctx.get("StructuredIdea.md", "").strip()
+    prd_content = ctx.get("PRD.md", "").strip()
+
+    questions = []
+    if not structured_idea:
+        questions.append("StructuredIdea.md is empty. Cannot generate app flow.")
+    if not prd_content:
+        questions.append("PRD.md is missing — cannot write AppFlow without it")
+    if not state.has_frontend:
+        questions.append("This project has no frontend enabled (has_frontend=False) — cannot generate app flow.")
+
+    state.pending_questions = questions
+    if questions:
+        state.status = "needs_input"
+        state.calling_agent = "appflow"
+    else:
+        state.status = "drafting"
+    return state
+
+
+def _write(state: PlannerState) -> PlannerState:
     ctx = load_context(state, "StructuredIdea.md", "PRD.md", "TRD.md")
 
     structured_idea = ctx.get("StructuredIdea.md", "").strip()
     prd_content = ctx.get("PRD.md", "").strip()
     trd_content = ctx.get("TRD.md", "").strip()
-
-    if not structured_idea:
-        state.pending_questions = ["StructuredIdea.md is empty. Cannot generate app flow."]
-        state.status = "needs_input"
-        state.calling_agent = "appflow"
-        return state
 
     user_content = f"Structured Idea:\n{structured_idea}\n"
     if prd_content:
@@ -63,4 +78,14 @@ def appflow_agent(state: PlannerState) -> PlannerState:
     state.current_file = "AppFlow.md"
     state.status = "drafting"
     state.next_agent = "rules"
+    state.phase = "done"
+    return state
+
+
+def appflow_agent(state: PlannerState) -> PlannerState:
+    """Generate AppFlow.md — only for projects with a frontend, using gather/write phases."""
+    if state.phase == "gather":
+        return _gather(state)
+    elif state.phase == "write":
+        return _write(state)
     return state

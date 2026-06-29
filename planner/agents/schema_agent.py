@@ -28,19 +28,32 @@ Rules:
 """
 
 
-def schema_agent(state: PlannerState) -> PlannerState:
-    """Generate Schema.md from StructuredIdea + TRD."""
+def _gather(state: PlannerState) -> PlannerState:
+    ctx = load_context(state, "StructuredIdea.md", "TRD.md", "Constraints.md")
+    structured_idea = ctx.get("StructuredIdea.md", "").strip()
+    trd_content = ctx.get("TRD.md", "").strip()
+
+    questions = []
+    if not structured_idea:
+        questions.append("StructuredIdea.md is empty. Cannot generate schema.")
+    if not trd_content:
+        questions.append("TRD.md is missing — cannot write Schema without it")
+
+    state.pending_questions = questions
+    if questions:
+        state.status = "needs_input"
+        state.calling_agent = "schema"
+    else:
+        state.status = "drafting"
+    return state
+
+
+def _write(state: PlannerState) -> PlannerState:
     ctx = load_context(state, "StructuredIdea.md", "TRD.md", "Constraints.md")
 
     structured_idea = ctx.get("StructuredIdea.md", "").strip()
     trd_content = ctx.get("TRD.md", "").strip()
     constraints = ctx.get("Constraints.md", "").strip()
-
-    if not structured_idea:
-        state.pending_questions = ["StructuredIdea.md is empty. Cannot generate schema."]
-        state.status = "needs_input"
-        state.calling_agent = "schema"
-        return state
 
     user_content = f"Structured Idea:\n{structured_idea}\n"
     if trd_content:
@@ -62,6 +75,15 @@ def schema_agent(state: PlannerState) -> PlannerState:
 
     state.current_file = "Schema.md"
     state.status = "drafting"
-    # Orchestrator will decide next: design (if frontend) or rules (if backend-only)
     state.next_agent = "orchestrator"
+    state.phase = "done"
+    return state
+
+
+def schema_agent(state: PlannerState) -> PlannerState:
+    """Generate Schema.md from StructuredIdea + TRD, using gather/write phases."""
+    if state.phase == "gather":
+        return _gather(state)
+    elif state.phase == "write":
+        return _write(state)
     return state

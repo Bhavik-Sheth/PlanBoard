@@ -30,17 +30,31 @@ Rules:
 """
 
 
-def module_planner_agent(state: PlannerState) -> PlannerState:
-    """Generate MODULES/<name>.md for the requested module."""
+def _gather(state: PlannerState) -> PlannerState:
     module_name = state.context_files.get("__module_name__", "").strip()
 
+    questions = []
     if not module_name:
-        # No module name set — end the run
-        state.status = "done"
-        state.next_agent = ""
-        return state
+        questions.append("What is the name of the module you want to plan?")
 
-    # Load context
+    # Check if other PLANNER files exist
+    ctx = load_context(state, "StructuredIdea.md", "TRD.md")
+    if not ctx.get("StructuredIdea.md"):
+        questions.append("StructuredIdea.md is missing. Please run `describe` first.")
+    if not ctx.get("TRD.md"):
+        questions.append("TRD.md is missing. Cannot plan modules without it.")
+
+    state.pending_questions = questions
+    if questions:
+        state.status = "needs_input"
+        state.calling_agent = "modules"
+    else:
+        state.status = "drafting"
+    return state
+
+
+def _write(state: PlannerState) -> PlannerState:
+    module_name = state.context_files.get("__module_name__", "").strip()
     ctx = load_context(state, "StructuredIdea.md", "TRD.md", "Schema.md", "Rules.md", "Constraints.md")
     structured_idea = ctx.get("StructuredIdea.md", "")
     trd_content = ctx.get("TRD.md", "")
@@ -81,4 +95,20 @@ def module_planner_agent(state: PlannerState) -> PlannerState:
     state.next_agent = ""
     # Clear the module name so repeated calls don't re-plan the same module
     state.context_files.pop("__module_name__", None)
+    state.phase = "done"
+    return state
+
+
+def module_planner_agent(state: PlannerState) -> PlannerState:
+    """Generate MODULES/<name>.md for the requested module, using gather/write phases."""
+    module_name = state.context_files.get("__module_name__", "").strip()
+    if not module_name:
+        state.status = "done"
+        state.next_agent = ""
+        return state
+
+    if state.phase == "gather":
+        return _gather(state)
+    elif state.phase == "write":
+        return _write(state)
     return state

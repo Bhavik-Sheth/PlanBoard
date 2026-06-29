@@ -100,6 +100,12 @@ class PlannerApp(App):
         # Start directory/architecture watcher
         self.start_watcher()
 
+    def on_unmount(self) -> None:
+        """Clean up background processes when the application exits."""
+        from planner.watcher.watcher_manager import WatcherManager
+        wm = WatcherManager(str(self.planner_path))
+        wm.stop()
+
     def start_watcher(self) -> None:
         """Spawn a background thread to watch for file system changes and refresh UI."""
         from watchfiles import watch

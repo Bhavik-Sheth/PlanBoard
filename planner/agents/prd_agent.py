@@ -23,31 +23,37 @@ Rules:
 - If any Constraints are provided, ensure the features and scope strictly adhere to them.
 """
 
-def prd_agent(state: PlannerState) -> PlannerState:
-    """
-    PRD Agent node: reads StructuredIdea.md and Constraints.md from disk,
-    invokes the configured LLM to generate the PRD content, writes it to PRD.md,
-    and updates the state.
-    """
+
+def _gather(state: PlannerState) -> PlannerState:
     planner_dir = Path(state.project_path)
     structured_idea_path = planner_dir / "StructuredIdea.md"
-    constraints_path = planner_dir / "Constraints.md"
 
-    # Verify StructuredIdea.md exists
     if not structured_idea_path.exists():
-        raise FileNotFoundError(f"StructuredIdea.md not found at {structured_idea_path}")
+        state.pending_questions = ["StructuredIdea.md is missing. Please structure your idea first."]
+        state.status = "needs_input"
+        state.current_file = "PRD.md"
+        state.calling_agent = "prd"
+        return state
 
-    # Read inputs
     structured_idea = read_file(str(structured_idea_path)).strip()
-
-    # If StructuredIdea is empty, stop and request user input
     if not structured_idea:
         state.pending_questions = ["The StructuredIdea.md file is empty. Please describe and structure your idea first."]
         state.status = "needs_input"
         state.current_file = "PRD.md"
-        state.calling_agent = "prd"  # Fix 2: ensure griller returns to prd_agent after collecting answers
+        state.calling_agent = "prd"
         return state
 
+    state.pending_questions = []
+    state.status = "drafting"
+    return state
+
+
+def _write(state: PlannerState) -> PlannerState:
+    planner_dir = Path(state.project_path)
+    structured_idea_path = planner_dir / "StructuredIdea.md"
+    constraints_path = planner_dir / "Constraints.md"
+
+    structured_idea = read_file(str(structured_idea_path)).strip()
     constraints = ""
     if constraints_path.exists():
         constraints = read_file(str(constraints_path)).strip()
@@ -71,16 +77,28 @@ def prd_agent(state: PlannerState) -> PlannerState:
         HumanMessage(content=user_content)
     ]
 
-    # Fix 1: use invoke_llm_safe (consistent with all other agents, gives user retry prompt on failure)
     prd_content = strip_markdown_fence(invoke_llm_safe(messages))
 
-    # Write PRD.md to disk (forcing overwrite since this is the agent's output draft)
+    # Write PRD.md to disk
     prd_path = planner_dir / "PRD.md"
     write_file(str(prd_path), prd_content, overwrite=True)
 
-    # Update state
     state.current_file = "PRD.md"
     state.structured_idea = structured_idea
     state.status = "drafting"
+    state.phase = "done"
 
+    return state
+
+
+def prd_agent(state: PlannerState) -> PlannerState:
+    """
+    PRD Agent node: reads StructuredIdea.md and Constraints.md from disk,
+    invokes the configured LLM to generate the PRD content, writes it to PRD.md,
+    and updates the state. Handles gather/write two-phase lifecycle.
+    """
+    if state.phase == "gather":
+        return _gather(state)
+    elif state.phase == "write":
+        return _write(state)
     return state

@@ -144,6 +144,8 @@ class OrchestratorAgent:
     def __init__(self, state: PlannerState) -> None:
         self.state = state
         self.planner_dir = Path(state.project_path)
+        from planner.watcher.watcher_manager import WatcherManager
+        self.watcher_manager = WatcherManager(str(self.planner_dir))
 
     # ── Payload helpers ────────────────────────────────────────────────
 
@@ -171,6 +173,7 @@ class OrchestratorAgent:
         project_root = str(self.planner_dir.parent)
         scaffold_planner(project_root)
         initialize_tracker(project_root, _TRACKER_SEQUENCE)
+        self.watcher_manager.start()
         return self._payload("ready", message="PLANNER/ created.")
 
     def handle_set_mode(self, mode: str) -> dict:
@@ -230,6 +233,7 @@ class OrchestratorAgent:
         """
         Load context, update tracker, call specialist agent, validate,
         generate bullet summary, update tracker, and return file_complete payload.
+        Handles two-phase (gather and write) specialist execution.
         """
         # Load upstream context
         if target_file in _UPSTREAM_MAP:
@@ -240,6 +244,33 @@ class OrchestratorAgent:
             module_name = target_file.split("/")[-1].replace(".md", "")
             self.state.context_files["__module_name__"] = module_name
 
+        # Inject change context if provided
+        if change_context:
+            self.state.change_context = change_context
+        else:
+            self.state.change_context = {}
+
+        # 1. Phase = Gather
+        self.state.phase = "gather"
+        save_state(self.state)
+
+        agent_fn = _get_agent_fn(agent_name)
+        self.state = agent_fn(self.state)
+
+        # Handle needs_input (questions from specialist)
+        if self.state.status == "needs_input" or self.state.pending_questions:
+            self.state.status = "needs_input"
+            self.state.calling_agent = agent_name
+            save_state(self.state)
+            return self._payload(
+                "question",
+                text=self.state.pending_questions[0] if self.state.pending_questions else "Missing info needed.",
+                reason="Specialist agent needs clarification.",
+                source_agent=agent_name,
+            )
+
+        # 2. Phase = Write
+        self.state.phase = "write"
         # Update tracker to In Progress
         self._update_tracker(
             target_file, "🔄 In Progress", f"{agent_name}_agent"
@@ -247,27 +278,9 @@ class OrchestratorAgent:
         self.state.current_file = target_file
         self.state.next_agent = agent_name
         self.state.status = "drafting"
-        
-        # Inject change context if provided
-        if change_context:
-            self.state.change_context = change_context
-        else:
-            self.state.change_context = {}
-            
         save_state(self.state)
 
-        # Call the specialist agent
-        agent_fn = _get_agent_fn(agent_name)
         self.state = agent_fn(self.state)
-
-        # Handle needs_input (questions from specialist)
-        if self.state.status == "needs_input":
-            return self._payload(
-                "question",
-                text=self.state.pending_questions[0] if self.state.pending_questions else "Missing info needed.",
-                reason="Specialist agent needs clarification.",
-                source_agent=agent_name,
-            )
 
         # Validate file structure
         file_path = self.planner_dir / target_file
@@ -302,40 +315,52 @@ class OrchestratorAgent:
         load upstream context, call the appropriate specialist agent, validate,
         and return a file_complete payload.
         """
-        # If there is an active update plan, route to the update flow
-        if self.state.active_update_plan:
-            return self._run_next_update_file()
+        lock_path = self.planner_dir / ".graph_running"
+        try:
+            lock_path.write_text("running", encoding="utf-8")
+            self.watcher_manager.restart_if_dead()
 
-        # Detect frontend
-        self.state.has_frontend = _detect_frontend(self.state)
-        if not self.state.has_frontend:
-            for target in ["DesignDecisions.md", "AppFlow.md"]:
-                if target not in self.state.approved_files:
-                    self.state.approved_files.append(target)
-                    self._update_tracker(
-                        target,
-                        "✅ Approved",
-                        "orchestrator",
-                        "Skipped (backend-only)",
-                    )
+            # If there is an active update plan, route to the update flow
+            if self.state.active_update_plan:
+                return self._run_next_update_file()
 
-        # Find first unapproved file in sequence
-        for agent_name, target_file in _SEQUENCE:
-            # Skip frontend-only agents if no frontend
-            if agent_name in _FRONTEND_AGENTS and not self.state.has_frontend:
-                continue
+            # Detect frontend
+            self.state.has_frontend = _detect_frontend(self.state)
+            if not self.state.has_frontend:
+                for target in ["DesignDecisions.md", "AppFlow.md"]:
+                    if target not in self.state.approved_files:
+                        self.state.approved_files.append(target)
+                        self._update_tracker(
+                            target,
+                            "✅ Approved",
+                            "orchestrator",
+                            "Skipped (backend-only)",
+                        )
 
-            if target_file not in self.state.approved_files:
-                return self._call_specialist(agent_name, target_file)
+            # Find first unapproved file in sequence
+            for agent_name, target_file in _SEQUENCE:
+                # Skip frontend-only agents if no frontend
+                if agent_name in _FRONTEND_AGENTS and not self.state.has_frontend:
+                    continue
 
-        # All files approved
-        self.state.status = "done"
-        self.state.next_agent = ""
-        save_state(self.state)
-        return self._payload("sequence_complete")
+                if target_file not in self.state.approved_files:
+                    return self._call_specialist(agent_name, target_file)
+
+            # All files approved
+            self.state.status = "done"
+            self.state.next_agent = ""
+            save_state(self.state)
+            return self._payload("sequence_complete")
+        finally:
+            if lock_path.exists():
+                try:
+                    lock_path.unlink()
+                except Exception:
+                    pass
 
     def handle_approve(self, file: str) -> dict:
         """Approve a file and determine next step."""
+        self.watcher_manager.restart_if_dead()
         if file not in self.state.approved_files:
             self.state.approved_files.append(file)
 
@@ -439,6 +464,9 @@ class OrchestratorAgent:
         # Remove from approved files if present
         if file in self.state.approved_files:
             self.state.approved_files.remove(file)
+
+        if file == "DesignDecisions.md":
+            self.state.accepted_suggestions = []
 
         self._update_tracker(file, "⏳ Pending", "user", "Reset by user")
         save_state(self.state)
@@ -720,7 +748,7 @@ class OrchestratorAgent:
                 from planner.agents.griller_agent import griller_agent
                 self.state = griller_agent(self.state)
                 save_state(self.state)
-                if self.state.next_agent == "tech_stack":
+                if self.state.active_suggestion:
                     from planner.agents.tech_stack_agent import tech_stack_agent
                     self.state = tech_stack_agent(self.state)
                     save_state(self.state)
@@ -930,6 +958,82 @@ class OrchestratorAgent:
                 message="Session cleared. Type /init to start fresh.",
             )
 
+    def handle_get_suggestion(self, question: str) -> dict:
+        """Call TechStackExpert to generate a suggestion and return suggestion payload."""
+        from planner.agents.tech_stack_agent import run as run_tech_stack
+        
+        # Load Constraints.md
+        load_context(self.state, "Constraints.md")
+        constraints = self.state.context_files.get("Constraints.md", "")
+        
+        # Generate suggestion
+        try:
+            suggestion = run_tech_stack({
+                "question": question,
+                "constraints": constraints,
+                "structured_idea": self.state.structured_idea,
+                "calling_agent": self.state.current_file,
+            })
+            self.state.active_suggestion = suggestion
+            save_state(self.state)
+            
+            return self._payload(
+                "suggestion",
+                tool=suggestion.get("recommendation", ""),
+                why=suggestion.get("why", ""),
+                tradeoff=suggestion.get("tradeoff", ""),
+                alternative=suggestion.get("alternative", ""),
+                question=question,
+            )
+        except Exception as exc:
+            return self._payload(
+                "error",
+                agent="TechStackExpert",
+                message=f"Failed to generate suggestion: {exc}",
+            )
+
+    def handle_suggestion_response(self, accepted: bool) -> dict:
+        """Process user's response to the active suggestion."""
+        suggestion = self.state.active_suggestion
+        if not suggestion:
+            return self._payload("error", agent="OrchestratorAgent", message="No active suggestion to respond to.")
+            
+        question = suggestion.get("question", "")
+        if not question and self.state.pending_questions:
+            question = self.state.pending_questions[0]
+            
+        if accepted:
+            answer = suggestion.get("recommendation", "")
+            why = suggestion.get("why", "")
+            alt = suggestion.get("alternative", "")
+            self.state.grill_answers[question] = answer
+            self.state.accepted_suggestions.append({
+                "question": question,
+                "answer": answer,
+                "why": why,
+                "alternative_rejected": alt
+            })
+            message = "Suggestion accepted."
+        else:
+            answer = suggestion.get("alternative", "")
+            self.state.grill_answers[question] = answer
+            self.state.accepted_suggestions.append({
+                "question": question,
+                "answer": answer,
+                "why": "Alternative chosen by user",
+                "alternative_rejected": suggestion.get("recommendation", "")
+            })
+            message = "Alternative accepted."
+            
+        # Clean up
+        if question in self.state.pending_questions:
+            self.state.pending_questions.remove(question)
+        self.state.active_suggestion = None
+        save_state(self.state)
+        
+        # Resume flow or return success message
+        return self._payload("ready", message=f"{message} Answer recorded. Continuing...")
+
     def dispatch(self, command: dict) -> dict:
         """
         Main entry point: receive a structured command from ExecutiveAgent,
@@ -958,6 +1062,8 @@ class OrchestratorAgent:
             "module_list":      lambda: self.handle_module_list(),
             "edit_complete":    lambda: self.handle_edit_complete(command.get("file", "")),
             "resume":           lambda: self.handle_resume(command.get("confirmed", True)),
+            "get_suggestion":   lambda: self.handle_get_suggestion(command.get("question", "")),
+            "suggestion_response": lambda: self.handle_suggestion_response(command.get("accepted", True)),
         }
 
         handler = handlers.get(cmd)

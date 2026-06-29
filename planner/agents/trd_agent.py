@@ -25,19 +25,47 @@ Rules:
 """
 
 
-def trd_agent(state: PlannerState) -> PlannerState:
-    """Generate TRD.md from StructuredIdea + PRD + Constraints."""
+def _gather(state: PlannerState) -> PlannerState:
+    ctx = load_context(state, "StructuredIdea.md", "PRD.md", "Constraints.md")
+    structured_idea = ctx.get("StructuredIdea.md", "").strip()
+    prd_content = ctx.get("PRD.md", "").strip()
+    constraints = ctx.get("Constraints.md", "").strip()
+
+    questions = []
+    if not structured_idea:
+        questions.append("StructuredIdea.md is empty. Please run `describe` first.")
+    if not prd_content:
+        questions.append("PRD.md is missing — cannot write TRD without it")
+    if not constraints:
+        questions.append("Constraints.md is missing — needed for NFR and stack decisions")
+
+    # Check for authentication method decision if 'auth' is mentioned in the idea
+    idea_lower = structured_idea.lower()
+    if "auth" in idea_lower or "login" in idea_lower or "sign up" in idea_lower or "user" in idea_lower:
+        has_auth_answer = False
+        for q, a in state.grill_answers.items():
+            if "authentication method" in q.lower() or "auth method" in q.lower() or q == "What authentication method will the app use?":
+                if a.strip():
+                    has_auth_answer = True
+                    break
+        if not has_auth_answer:
+            questions.append("What authentication method will the app use?")
+
+    state.pending_questions = questions
+    if questions:
+        state.status = "needs_input"
+        state.calling_agent = "trd"
+    else:
+        state.status = "drafting"
+    return state
+
+
+def _write(state: PlannerState) -> PlannerState:
     ctx = load_context(state, "StructuredIdea.md", "PRD.md", "Constraints.md")
 
     structured_idea = ctx.get("StructuredIdea.md", "").strip()
     prd_content = ctx.get("PRD.md", "").strip()
     constraints = ctx.get("Constraints.md", "").strip()
-
-    if not structured_idea:
-        state.pending_questions = ["StructuredIdea.md is empty. Please run `describe` first."]
-        state.status = "needs_input"
-        state.calling_agent = "trd"
-        return state
 
     user_content = f"Structured Idea:\n{structured_idea}\n"
     if prd_content:
@@ -60,4 +88,14 @@ def trd_agent(state: PlannerState) -> PlannerState:
     state.current_file = "TRD.md"
     state.status = "drafting"
     state.next_agent = "schema"
+    state.phase = "done"
+    return state
+
+
+def trd_agent(state: PlannerState) -> PlannerState:
+    """Generate TRD.md from StructuredIdea + PRD + Constraints, using gather/write phases."""
+    if state.phase == "gather":
+        return _gather(state)
+    elif state.phase == "write":
+        return _write(state)
     return state

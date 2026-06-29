@@ -28,19 +28,32 @@ Rules:
 """
 
 
-def design_agent(state: PlannerState) -> PlannerState:
-    """Generate DesignDecisions.md — only for projects with a frontend."""
+def _gather(state: PlannerState) -> PlannerState:
+    ctx = load_context(state, "StructuredIdea.md", "TRD.md", "PRD.md")
+    structured_idea = ctx.get("StructuredIdea.md", "").strip()
+    trd_content = ctx.get("TRD.md", "").strip()
+
+    questions = []
+    if not structured_idea:
+        questions.append("StructuredIdea.md is empty. Cannot generate design decisions.")
+    if not trd_content:
+        questions.append("TRD.md is missing — cannot write DesignDecisions without it")
+
+    state.pending_questions = questions
+    if questions:
+        state.status = "needs_input"
+        state.calling_agent = "design"
+    else:
+        state.status = "drafting"
+    return state
+
+
+def _write(state: PlannerState) -> PlannerState:
     ctx = load_context(state, "StructuredIdea.md", "TRD.md", "PRD.md")
 
     structured_idea = ctx.get("StructuredIdea.md", "").strip()
     trd_content = ctx.get("TRD.md", "").strip()
     prd_content = ctx.get("PRD.md", "").strip()
-
-    if not structured_idea:
-        state.pending_questions = ["StructuredIdea.md is empty. Cannot generate design decisions."]
-        state.status = "needs_input"
-        state.calling_agent = "design"
-        return state
 
     today = date.today().isoformat()
     system = SYSTEM_PROMPT.format(today=today)
@@ -54,6 +67,16 @@ def design_agent(state: PlannerState) -> PlannerState:
         user_content += "\nAdditional context from user:\n"
         for q, a in state.grill_answers.items():
             user_content += f"- Q: {q}\n  A: {a}\n"
+    if state.accepted_suggestions:
+        user_content += "\nAccepted Technology/Architecture Decisions (MUST be documented as formal ADRs in the output):\n"
+        for sugg in state.accepted_suggestions:
+            user_content += (
+                f"- Decision: {sugg.get('answer', '')}\n"
+                f"  Question: {sugg.get('question', '')}\n"
+                f"  Rationale/Why: {sugg.get('why', '')}\n"
+            )
+            if sugg.get("alternative_rejected"):
+                user_content += f"  Alternative Rejected: {sugg.get('alternative_rejected', '')}\n"
 
     update_inst = get_update_instructions(state, "DesignDecisions.md")
     if update_inst:
@@ -66,4 +89,14 @@ def design_agent(state: PlannerState) -> PlannerState:
     state.current_file = "DesignDecisions.md"
     state.status = "drafting"
     state.next_agent = "appflow"
+    state.phase = "done"
+    return state
+
+
+def design_agent(state: PlannerState) -> PlannerState:
+    """Generate DesignDecisions.md — only for projects with a frontend, using gather/write phases."""
+    if state.phase == "gather":
+        return _gather(state)
+    elif state.phase == "write":
+        return _write(state)
     return state

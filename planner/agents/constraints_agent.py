@@ -27,28 +27,35 @@ Rules:
 - Distinguish hard constraints (immovable) from soft preferences. Write in absolute terms: "must not", "never", "always".
 """
 
-def constraints_agent(state: PlannerState) -> PlannerState:
-    """
-    Constraints Agent node: reads StructuredIdea.md,
-    invokes LLM to generate Constraints.md, writes it to disk, and updates state.
-    """
+
+def _gather(state: PlannerState) -> PlannerState:
     planner_dir = Path(state.project_path)
     structured_idea_path = planner_dir / "StructuredIdea.md"
 
-    # Verify StructuredIdea.md exists
     if not structured_idea_path.exists():
-        raise FileNotFoundError(f"StructuredIdea.md not found at {structured_idea_path}")
+        state.pending_questions = ["StructuredIdea.md is missing. Please structure your idea first."]
+        state.status = "needs_input"
+        state.current_file = "Constraints.md"
+        state.calling_agent = "constraints"
+        return state
 
-    # Read StructuredIdea
     structured_idea = read_file(str(structured_idea_path)).strip()
-
-    # If StructuredIdea is empty, stop and request user input
     if not structured_idea:
         state.pending_questions = ["The StructuredIdea.md file is empty. Please describe and structure your idea first."]
         state.status = "needs_input"
         state.current_file = "Constraints.md"
         state.calling_agent = "constraints"
         return state
+
+    state.pending_questions = []
+    state.status = "drafting"
+    return state
+
+
+def _write(state: PlannerState) -> PlannerState:
+    planner_dir = Path(state.project_path)
+    structured_idea_path = planner_dir / "StructuredIdea.md"
+    structured_idea = read_file(str(structured_idea_path)).strip()
 
     user_content = f"Structured Idea:\n{structured_idea}\n"
     if state.grill_answers:
@@ -65,14 +72,24 @@ def constraints_agent(state: PlannerState) -> PlannerState:
         HumanMessage(content=user_content)
     ]
 
-    # Generate content using LLM with safe retry wrapper
     constraints_content = strip_markdown_fence(invoke_llm_safe(messages))
-
-    # Write Constraints.md to disk
     write_agent_file(state, "Constraints.md", constraints_content)
 
-    # Update state
     state.current_file = "Constraints.md"
     state.status = "drafting"
+    state.phase = "done"
 
+    return state
+
+
+def constraints_agent(state: PlannerState) -> PlannerState:
+    """
+    Constraints Agent node: reads StructuredIdea.md,
+    invokes LLM to generate Constraints.md, writes it to disk, and updates state.
+    Handles gather/write two-phase lifecycle.
+    """
+    if state.phase == "gather":
+        return _gather(state)
+    elif state.phase == "write":
+        return _write(state)
     return state

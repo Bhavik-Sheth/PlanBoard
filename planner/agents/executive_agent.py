@@ -596,6 +596,12 @@ class ExecutiveAgent:
             return None, "Proceeding with current scope. Type /run to continue."
 
         elif waiting == "question_answer":
+            if raw.strip() == "?":
+                question = self.state.pending_questions[0] if self.state.pending_questions else ""
+                cmd = {"command": "get_suggestion", "question": question}
+                payload = self.orchestrator.dispatch(cmd)
+                return cmd, self.render_payload(payload)
+
             self.exec_state["waiting_for"] = ""
             # Store answer in state and continue
             if self.state.pending_questions:
@@ -607,9 +613,10 @@ class ExecutiveAgent:
 
         elif waiting == "suggestion_confirm":
             self.exec_state["waiting_for"] = ""
-            if raw_lower in ("yes", "y"):
-                return None, "Suggestion accepted."
-            return None, "Suggestion rejected. Enter your own answer:"
+            accepted = raw_lower in ("yes", "y", "approve", "accept")
+            cmd = {"command": "suggestion_response", "accepted": accepted}
+            payload = self.orchestrator.dispatch(cmd)
+            return cmd, self.render_payload(payload)
 
         elif waiting == "retry_confirm":
             self.exec_state["waiting_for"] = ""

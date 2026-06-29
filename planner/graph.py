@@ -188,7 +188,9 @@ def build_graph() -> StateGraph:
     # TechStackExpert: always back to griller
     g.add_edge("tech_stack", "griller")
 
-    return g.compile()
+    from langgraph.checkpoint.memory import InMemorySaver
+    checkpointer = InMemorySaver()
+    return g.compile(checkpointer=checkpointer, interrupt_before=["griller"])
 
 
 def run_graph(project_path: str) -> PlannerState:
@@ -198,6 +200,7 @@ def run_graph(project_path: str) -> PlannerState:
     Returns the final PlannerState.
     """
     from pathlib import Path
+    from planner.watcher.watcher_manager import WatcherManager
 
     planner_dir = Path(project_path)
     if not planner_dir.exists():
@@ -205,14 +208,28 @@ def run_graph(project_path: str) -> PlannerState:
             f"PLANNER directory not found at {planner_dir}. Run `planner init` first."
         )
 
-    # Load state from disk
-    state = load_state(project_path)
+    lock_path = planner_dir / ".graph_running"
+    wm = WatcherManager(project_path)
+    
+    try:
+        lock_path.write_text("running", encoding="utf-8")
+        wm.restart_if_dead()
 
-    graph = build_graph()
-    result_dict = graph.invoke(state.model_dump())
-    
-    final_state = PlannerState(**result_dict)
-    
-    # Save state back to disk
-    save_state(final_state)
-    return final_state
+        # Load state from disk
+        state = load_state(project_path)
+
+        graph = build_graph()
+        config = {"configurable": {"thread_id": "1"}}
+        result_dict = graph.invoke(state.model_dump(), config)
+        
+        final_state = PlannerState(**result_dict)
+        
+        # Save state back to disk
+        save_state(final_state)
+        return final_state
+    finally:
+        if lock_path.exists():
+            try:
+                lock_path.unlink()
+            except Exception:
+                pass

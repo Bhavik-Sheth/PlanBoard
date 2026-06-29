@@ -46,9 +46,17 @@ class PlannerState(BaseModel):
         default_factory=dict,
         description="question -> answer, filled by the Griller agent after prompting user.",
     )
-    tech_suggestions: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Suggestions from the TechStackExpert agent, keyed by question.",
+    phase: str = Field(
+        "gather",
+        description="Current specialist phase: 'gather' | 'write' | 'done'",
+    )
+    accepted_suggestions: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Accepted suggestions from TechStackExpert.",
+    )
+    active_suggestion: Optional[Dict[str, Any]] = Field(
+        None,
+        description="The active suggestion being reviewed.",
     )
     status: str = Field(
         "drafting",
