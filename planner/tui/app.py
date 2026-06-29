@@ -86,11 +86,15 @@ class PlannerApp(App):
         viewer = self.query_one("#viewer-panel")
         if not self.planner_path.exists():
             viewer.write_output("[yellow]Warning: PLANNER/ directory not found.[/yellow]")
-            viewer.write_output("Please initialize with [bold cyan]/init[/bold cyan] or [bold cyan]planner init[/bold cyan].")
-            viewer.write_output("Displaying current working directory in the File Tree instead.")
+            viewer.write_output("Initializing PlannerX startup flow...")
+            self._cmd_init()
         else:
-            viewer.write_output("[green]PlannerX TUI Shell initialized successfully.[/green]")
-            viewer.write_output("Use [bold cyan]/help[/bold cyan] to see available commands.")
+            def resume_worker():
+                from planner.agents.orchestrator import run_startup_flow
+                from planner.state import load_state
+                state = load_state(str(self.planner_path))
+                run_startup_flow(state)
+            self.run_in_background(resume_worker)
 
         # Start directory/architecture watcher
         self.start_watcher()
@@ -264,6 +268,8 @@ class PlannerApp(App):
                 self._cmd_consistency()
             elif name == "/finalize":
                 self._cmd_finalize()
+            elif name == "/update":
+                self._cmd_update(arg)
             elif name == "/config":
                 self._cmd_config(arg)
             elif name == "/abort":
@@ -287,6 +293,7 @@ class PlannerApp(App):
         viewer.write_output("  [bold cyan]/module add <name>[/bold cyan]      - Add a new code module spec")
         viewer.write_output("  [bold cyan]/module list[/bold cyan]            - List existing module specs")
         viewer.write_output("  [bold cyan]/consistency[/bold cyan]             - Run documentation consistency audit")
+        viewer.write_output("  [bold cyan]/update <description>[/bold cyan]    - Request a mid-session plan/requirement change")
         viewer.write_output("  [bold cyan]/config[/bold cyan]                  - Configure LLM provider, model, and API keys")
         viewer.write_output("  [bold cyan]/finalize[/bold cyan]                - Compile CLAUDE.md and exit planning")
         viewer.write_output("  [bold cyan]/help[/bold cyan]                    - Show this help message")
@@ -294,12 +301,12 @@ class PlannerApp(App):
         viewer.write_output("\n[dim]To request changes, click a file in the tree to select it and type your change request message directly.[/dim]")
 
     def _cmd_init(self) -> None:
-        """Scaffold the planning project."""
-        from planner.files.scaffold import scaffold_project
-
+        """Scaffold and run startup flow for PlannerX."""
         def worker():
-            scaffold_project()
-            print("✅ PLANNER/ initialized successfully.")
+            from planner.agents.orchestrator import run_startup_flow
+            from planner.state import PlannerState
+            state = PlannerState(project_path=str(self.planner_path))
+            run_startup_flow(state)
             # Set path reactive property to PLANNER/ so file tree loads it
             def update_ui():
                 file_tree = self.query_one("#file-tree")
@@ -318,13 +325,21 @@ class PlannerApp(App):
             self.query_one("#viewer-panel").write_output("[red]Error: PLANNER/ directory not found. Run `/init` first.[/red]")
             return
 
+        # Route to updates agent if planning is already underway
+        prd_path = self.planner_path / "PRD.md"
+        planning_underway = prd_path.exists() and prd_path.stat().st_size > 0
+        if planning_underway:
+            self.query_one("#viewer-panel").write_output("⏳  Planning is already underway. Routing to Updates Agent...")
+            self._run_updates_agent(text, triggered_by="orchestrator")
+            return
+
         def worker():
             from planner.agents.structuring_agent import structuring_agent
-            from planner.files.writer import write_planner_file
+            from planner.tools import append_file
             from planner.state import PlannerState
 
             # 1. Append to RawIdea.md
-            write_planner_file(self.planner_path / "RawIdea.md", text)
+            append_file(str(self.planner_path / "RawIdea.md"), text)
             print(f"✅ Appended to RawIdea.md ({len(text)} chars).")
 
             # 2. Run structuring agent
@@ -406,6 +421,18 @@ class PlannerApp(App):
             print(f"⏳ Updating Tracker.md for approval of {filename}...")
             tracker_agent(state)
             print(f"✅ {filename} marked as approved in Tracker.md.")
+            
+            print("\n🚀 Resuming planning sequence...")
+            from planner.graph import run_graph
+            final_state = run_graph(str(self.planner_path))
+            if final_state.status == "done":
+                print("\n✅ Planning run complete. Select a file or check Tracker.md to review.")
+            elif final_state.status == "error":
+                print(f"\n[ERROR] Run stopped: {final_state.error_message}")
+            elif final_state.status == "needs_input":
+                print(f"\n[INFO] Run paused, needs user input:")
+                for q in final_state.pending_questions:
+                    print(f" - {q}")
 
         self.run_in_background(worker)
 
@@ -478,11 +505,11 @@ class PlannerApp(App):
 
             def worker():
                 from planner.agents.module_planner_agent import module_planner_agent
-                from planner.files.reader import read_planner_file
+                from planner.tools import read_file
                 from planner.state import PlannerState
 
                 si_path = self.planner_path / "StructuredIdea.md"
-                structured_idea = read_planner_file(si_path, use_cache=False).strip() if si_path.exists() else ""
+                structured_idea = read_file(str(si_path)).strip() if si_path.exists() else ""
 
                 state = PlannerState(
                     project_path=str(self.planner_path),
@@ -552,12 +579,50 @@ class PlannerApp(App):
 
         self.run_in_background(worker)
 
+    def _cmd_update(self, text: str) -> None:
+        """Handle /update command to initiate UpdatesAgent."""
+        text = text.strip()
+        if not text:
+            def worker():
+                try:
+                    desc = input("What changed? Describe the update: ").strip()
+                except Exception:
+                    desc = ""
+                if desc:
+                    self._run_updates_agent(desc, triggered_by="user_command")
+                else:
+                    print("Update description cannot be empty.")
+            self.run_in_background(worker)
+        else:
+            self._run_updates_agent(text, triggered_by="user_command")
+
+    def _run_updates_agent(self, change_description: str, triggered_by: str = "user_command") -> None:
+        def worker():
+            from planner.state import load_state
+            from planner.agents.updates_agent import UpdatesAgent
+
+            if not self.planner_path.exists():
+                print("[ERROR] PLANNER/ directory not found. Run `/init` first.")
+                return
+
+            si_path = self.planner_path / "StructuredIdea.md"
+            if not si_path.exists() or si_path.stat().st_size == 0:
+                print("[ERROR] No planning session found. Run `/init` first.")
+                return
+
+            print("⏳ Initializing Updates Agent...")
+            state = load_state(str(self.planner_path))
+            agent = UpdatesAgent(state)
+            agent.run(change_description=change_description, triggered_by=triggered_by)
+
+        self.run_in_background(worker)
+
     def _cmd_config(self, arg: str) -> None:
         """Handle LLM provider, model, and api key configuration via TUI."""
         arg = arg.strip()
         viewer = self.query_one("#viewer-panel")
         
-        from planner.llm import (
+        from planner.tools import (
             get_active_provider,
             get_active_model,
             set_active_provider,
@@ -603,7 +668,7 @@ class PlannerApp(App):
                 return
 
             # Pre-flight package check
-            from planner.llm import PROVIDER_REGISTRY
+            from planner.tools import PROVIDER_REGISTRY
             import importlib
             entry = PROVIDER_REGISTRY[subarg1]
             try:
@@ -693,8 +758,8 @@ class PlannerApp(App):
                 pass
             elif action == "init":
                 print("▶ Dispatching action: initialize project")
-                from planner.files.scaffold import scaffold_project
-                scaffold_project()
+                from planner.tools import scaffold_planner
+                scaffold_planner(str(self.planner_path.parent))
                 print("✅ PLANNER/ initialized successfully.")
                 def update_ui():
                     self.query_one("#file-tree").path = self.planner_path
@@ -702,18 +767,28 @@ class PlannerApp(App):
 
             elif action == "describe":
                 print(f"▶ Dispatching action: describe project idea")
-                from planner.files.writer import write_planner_file
+                prd_path = self.planner_path / "PRD.md"
+                planning_underway = prd_path.exists() and prd_path.stat().st_size > 0
+                if planning_underway:
+                    print("⏳ Planning is already underway. Routing to Updates Agent...")
+                    from planner.state import load_state
+                    from planner.agents.updates_agent import UpdatesAgent
+                    state = load_state(str(self.planner_path))
+                    agent = UpdatesAgent(state)
+                    agent.run(change_description=text_content, triggered_by="orchestrator")
+                    return
+
+                from planner.tools import append_file, scaffold_planner
                 from planner.agents.structuring_agent import structuring_agent
                 from planner.state import PlannerState
                 
                 if not self.planner_path.exists():
-                    from planner.files.scaffold import scaffold_project
-                    scaffold_project()
+                    scaffold_planner(str(self.planner_path.parent))
                     def update_ui():
                         self.query_one("#file-tree").path = self.planner_path
                     self.call_from_thread(update_ui)
                 
-                write_planner_file(self.planner_path / "RawIdea.md", text_content)
+                append_file(str(self.planner_path / "RawIdea.md"), text_content)
                 print(f"✅ Appended to RawIdea.md.")
                 print("⏳ Structuring idea via LLM...")
                 state = PlannerState(project_path=str(self.planner_path))
@@ -779,6 +854,18 @@ class PlannerApp(App):
                 print(f"⏳ Updating Tracker.md for approval of {target}...")
                 tracker_agent(state)
                 print(f"✅ {target} marked as approved in Tracker.md.")
+                
+                print("\n🚀 Resuming planning sequence...")
+                from planner.graph import run_graph
+                final_state = run_graph(str(self.planner_path))
+                if final_state.status == "done":
+                    print("\n✅ Planning run complete. Select a file or check Tracker.md to review.")
+                elif final_state.status == "error":
+                    print(f"\n[ERROR] Run stopped: {final_state.error_message}")
+                elif final_state.status == "needs_input":
+                    print(f"\n[INFO] Run paused, needs user input:")
+                    for q in final_state.pending_questions:
+                        print(f" - {q}")
 
             elif action == "reset":
                 print(f"▶ Dispatching action: reset {target}")
@@ -838,11 +925,11 @@ class PlannerApp(App):
                     print("[red]No module name resolved to add.[/red]")
                     return
                 from planner.agents.module_planner_agent import module_planner_agent
-                from planner.files.reader import read_planner_file
+                from planner.tools import read_file
                 from planner.state import PlannerState
 
                 si_path = self.planner_path / "StructuredIdea.md"
-                structured_idea = read_planner_file(si_path, use_cache=False).strip() if si_path.exists() else ""
+                structured_idea = read_file(str(si_path)).strip() if si_path.exists() else ""
 
                 state = PlannerState(
                     project_path=str(self.planner_path),
@@ -902,17 +989,27 @@ class PlannerApp(App):
                 resolved = resolve_relative_path(self.planner_path, target)
                 if resolved:
                     target = resolved
+
+                if target == "StructuredIdea.md":
+                    print("⏳ Target is StructuredIdea.md. Routing to Updates Agent...")
+                    from planner.state import load_state
+                    from planner.agents.updates_agent import UpdatesAgent
+                    state = load_state(str(self.planner_path))
+                    agent = UpdatesAgent(state)
+                    agent.run(change_description=text_content, triggered_by="orchestrator")
+                    return
+
                 target_path = self.planner_path / target
                 if not target_path.exists():
                     print(f"[red]Error: {target} not found in PLANNER/.[/red]")
                     return
                 
                 import importlib
-                from planner.files.reader import read_planner_file
+                from planner.tools import read_file
                 from planner.state import PlannerState
 
                 si_path = self.planner_path / "StructuredIdea.md"
-                structured_idea = read_planner_file(si_path, use_cache=False).strip() if si_path.exists() else ""
+                structured_idea = read_file(str(si_path)).strip() if si_path.exists() else ""
 
                 state = PlannerState(
                     project_path=str(self.planner_path),
@@ -942,6 +1039,7 @@ class PlannerApp(App):
 
                     agents = {
                         "structuring": "planner.agents.structuring_agent.structuring_agent",
+                        "constraints": "planner.agents.constraints_agent.constraints_agent",
                         "prd":         "planner.agents.prd_agent.prd_agent",
                         "trd":         "planner.agents.trd_agent.trd_agent",
                         "schema":      "planner.agents.schema_agent.schema_agent",

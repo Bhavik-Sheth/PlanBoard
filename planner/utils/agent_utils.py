@@ -4,6 +4,7 @@ from pathlib import Path
 # Mapping of top-level planning files to their owning agent name
 _FILE_AGENT_MAP = {
     "StructuredIdea.md":     "structuring",
+    "Constraints.md":        "constraints",
     "PRD.md":                "prd",
     "TRD.md":                "trd",
     "Schema.md":             "schema",

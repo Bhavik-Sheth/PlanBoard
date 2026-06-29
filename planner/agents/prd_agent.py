@@ -1,9 +1,8 @@
 from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from planner.state import PlannerState
-from planner.files.reader import read_planner_file
-from planner.files.writer import write_planner_file
-from planner.agents._base import invoke_llm_safe, strip_markdown_fence
+from planner.tools import read_file, write_file
+from planner.agents._base import invoke_llm_safe, strip_markdown_fence, get_update_instructions
 
 PRD_SYSTEM_PROMPT = """You are a Principal Product Manager expert at writing Product Requirements Documents (PRD).
 Your only goal is to generate a comprehensive, clear, and professional `PRD.md` file based on a Structured Idea and any optional Constraints.
@@ -39,7 +38,7 @@ def prd_agent(state: PlannerState) -> PlannerState:
         raise FileNotFoundError(f"StructuredIdea.md not found at {structured_idea_path}")
 
     # Read inputs
-    structured_idea = read_planner_file(structured_idea_path, use_cache=False).strip()
+    structured_idea = read_file(str(structured_idea_path)).strip()
 
     # If StructuredIdea is empty, stop and request user input
     if not structured_idea:
@@ -51,7 +50,7 @@ def prd_agent(state: PlannerState) -> PlannerState:
 
     constraints = ""
     if constraints_path.exists():
-        constraints = read_planner_file(constraints_path, use_cache=False).strip()
+        constraints = read_file(str(constraints_path)).strip()
 
     # Build prompt messages
     user_content = f"Structured Idea:\n{structured_idea}\n"
@@ -63,6 +62,10 @@ def prd_agent(state: PlannerState) -> PlannerState:
         for q, a in state.grill_answers.items():
             user_content += f"- Q: {q}\n  A: {a}\n"
 
+    update_inst = get_update_instructions(state, "PRD.md")
+    if update_inst:
+        user_content += update_inst
+
     messages = [
         SystemMessage(content=PRD_SYSTEM_PROMPT),
         HumanMessage(content=user_content)
@@ -73,7 +76,7 @@ def prd_agent(state: PlannerState) -> PlannerState:
 
     # Write PRD.md to disk (forcing overwrite since this is the agent's output draft)
     prd_path = planner_dir / "PRD.md"
-    write_planner_file(prd_path, prd_content, force=True)
+    write_file(str(prd_path), prd_content, overwrite=True)
 
     # Update state
     state.current_file = "PRD.md"

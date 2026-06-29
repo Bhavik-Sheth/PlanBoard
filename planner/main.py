@@ -52,11 +52,12 @@ def main(ctx: typer.Context) -> None:
 
 @app.command(name="init")
 def init_cmd() -> None:
-    """Scaffold PLANNER/ directory and create all empty planning files."""
+    """Initialize PLANNER/ directory structure and run startup mode selection flow."""
     try:
-        from planner.files.scaffold import scaffold_project
-        scaffold_project()
-        typer.echo("✅  PLANNER/ initialized successfully.")
+        from planner.agents.orchestrator import run_startup_flow
+        from planner.state import PlannerState
+        state = PlannerState(project_path=str(_planner_dir()))
+        run_startup_flow(state)
     except Exception as e:
         typer.echo(f"[ERROR] {e}", err=True)
         raise typer.Exit(1)
@@ -75,9 +76,26 @@ def describe_cmd(text: str = typer.Argument(..., help="Your project idea text.")
         raise typer.Exit(1)
 
     # 1. Append to RawIdea.md
-    from planner.files.writer import write_planner_file
-    write_planner_file(planner_dir / "RawIdea.md", text)
+    from planner.tools import append_file
+    append_file(str(planner_dir / "RawIdea.md"), text)
     typer.echo(f"✅  Appended to RawIdea.md ({len(text)} chars).")
+
+    # Route to updates agent if planning is already underway
+    prd_path = planner_dir / "PRD.md"
+    planning_underway = prd_path.exists() and prd_path.stat().st_size > 0
+    if planning_underway:
+        typer.echo("⏳  Planning is already underway. Routing to Updates Agent...")
+        try:
+            from planner.state import load_state
+            from planner.agents.updates_agent import UpdatesAgent
+            state = load_state(str(planner_dir))
+            agent = UpdatesAgent(state)
+            agent.run(change_description=text, triggered_by="orchestrator")
+            typer.echo("✅  Updates completed.")
+            return
+        except Exception as e:
+            typer.echo(f"[ERROR] Updates failed: {e}", err=True)
+            raise typer.Exit(1)
 
     # 2. Run the structuring agent
     typer.echo("⏳  Structuring idea via LLM...")
@@ -92,6 +110,50 @@ def describe_cmd(text: str = typer.Argument(..., help="Your project idea text.")
             typer.echo("✅  StructuredIdea.md updated.")
     except Exception as e:
         typer.echo(f"[ERROR] Structuring failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
+# ─────────────────────────────────────────────
+# update
+# ─────────────────────────────────────────────
+
+@app.command(name="update")
+def update_cmd(
+    text: Optional[str] = typer.Argument(None, help="The description of the change.")
+) -> None:
+    """Apply a change/update to the project design and planning files."""
+    planner_dir = _planner_dir()
+    if not planner_dir.exists():
+        typer.echo("[ERROR] PLANNER/ not found. Run `planner init` first.", err=True)
+        raise typer.Exit(1)
+
+    # Check if planning files exist yet
+    si_path = planner_dir / "StructuredIdea.md"
+    if not si_path.exists() or si_path.stat().st_size == 0:
+        typer.echo("[ERROR] No planning session found. Run `planner init` first.", err=True)
+        raise typer.Exit(1)
+
+    if not text:
+        try:
+            text = input("What changed? Describe the update: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            typer.echo("\nAborted.")
+            raise typer.Exit(1)
+        if not text:
+            typer.echo("[ERROR] Update description cannot be empty.", err=True)
+            raise typer.Exit(1)
+
+    try:
+        from planner.state import load_state
+        from planner.agents.updates_agent import UpdatesAgent
+        state = load_state(str(planner_dir))
+        agent = UpdatesAgent(state)
+        agent.run(change_description=text, triggered_by="user_command")
+    except KeyboardInterrupt:
+        typer.echo("\n[INTERRUPTED] Update aborted by user.")
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"\n[ERROR] {e}", err=True)
         raise typer.Exit(1)
 
 
@@ -222,7 +284,7 @@ def reset_cmd(file: str = typer.Argument(..., help="Filename to reset and re-run
 def _run_single_agent(planner_path: str, agent_name: str, filename: Optional[str] = None) -> None:
     """Import and invoke a single agent by name."""
     from planner.state import PlannerState
-    from planner.files.reader import read_planner_file
+    from planner.tools import read_file
 
     if agent_name == "diagram":
         from planner.agents.architecture_diagram_agent import generate_diagrams
@@ -231,7 +293,7 @@ def _run_single_agent(planner_path: str, agent_name: str, filename: Optional[str
 
     planner_dir = Path(planner_path)
     si_path = planner_dir / "StructuredIdea.md"
-    structured_idea = read_planner_file(si_path, use_cache=False).strip() if si_path.exists() else ""
+    structured_idea = read_file(str(si_path)).strip() if si_path.exists() else ""
     state = PlannerState(project_path=planner_path, structured_idea=structured_idea)
 
     if agent_name == "modules" and filename:
@@ -240,6 +302,7 @@ def _run_single_agent(planner_path: str, agent_name: str, filename: Optional[str
 
     agents = {
         "structuring": "planner.agents.structuring_agent.structuring_agent",
+        "constraints": "planner.agents.constraints_agent.constraints_agent",
         "prd":         "planner.agents.prd_agent.prd_agent",
         "trd":         "planner.agents.trd_agent.trd_agent",
         "schema":      "planner.agents.schema_agent.schema_agent",
@@ -276,10 +339,10 @@ def module_add_cmd(name: str = typer.Argument(..., help="Module name (no spaces,
 
     from planner.state import PlannerState
     from planner.agents.module_planner_agent import module_planner_agent
-    from planner.files.reader import read_planner_file
+    from planner.tools import read_file
 
     si_path = planner_dir / "StructuredIdea.md"
-    structured_idea = read_planner_file(si_path, use_cache=False).strip() if si_path.exists() else ""
+    structured_idea = read_file(str(si_path)).strip() if si_path.exists() else ""
 
     state = PlannerState(
         project_path=str(planner_dir),

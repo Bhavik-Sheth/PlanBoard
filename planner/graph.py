@@ -16,9 +16,10 @@ from __future__ import annotations
 
 from langgraph.graph import StateGraph, END
 
-from planner.state import PlannerState
+from planner.state import PlannerState, load_state, save_state
 from planner.agents.orchestrator import orchestrator
 from planner.agents.structuring_agent import structuring_agent
+from planner.agents.constraints_agent import constraints_agent
 from planner.agents.prd_agent import prd_agent
 from planner.agents.trd_agent import trd_agent
 from planner.agents.schema_agent import schema_agent
@@ -77,14 +78,14 @@ def _route_from_tech_stack(state: PlannerState) -> str:
 # --------------------------------------------------------------------------- #
 
 _VALID_NODES = {
-    "orchestrator", "structuring", "prd", "trd", "schema",
+    "orchestrator", "structuring", "constraints", "prd", "trd", "schema",
     "design", "appflow", "rules", "implementation", "tracker",
     "modules", "griller", "tech_stack",
 }
 
 # Map state.next_agent value → graph node name (they match already, but explicit is safer)
 _SPECIALIST_NODES = {
-    "structuring", "prd", "trd", "schema",
+    "structuring", "constraints", "prd", "trd", "schema",
     "design", "appflow", "rules", "implementation", "tracker", "modules",
 }
 
@@ -114,6 +115,7 @@ def build_graph() -> StateGraph:
     # Register all nodes (wrapped for Pydantic ↔ dict conversion)
     g.add_node("orchestrator",    _wrap(orchestrator))
     g.add_node("structuring",     _wrap(structuring_agent))
+    g.add_node("constraints",     _wrap(constraints_agent))
     g.add_node("prd",             _wrap(prd_agent))
     g.add_node("trd",             _wrap(trd_agent))
     g.add_node("schema",          _wrap(schema_agent))
@@ -163,7 +165,6 @@ def run_graph(project_path: str) -> PlannerState:
     Initialises state and runs the compiled graph to completion.
     Returns the final PlannerState.
     """
-    from planner.files.reader import read_planner_file
     from pathlib import Path
 
     planner_dir = Path(project_path)
@@ -172,15 +173,14 @@ def run_graph(project_path: str) -> PlannerState:
             f"PLANNER directory not found at {planner_dir}. Run `planner init` first."
         )
 
-    # Pre-load StructuredIdea if it exists
-    si_path = planner_dir / "StructuredIdea.md"
-    structured_idea = read_planner_file(si_path, use_cache=False).strip() if si_path.exists() else ""
-
-    initial_state = PlannerState(
-        project_path=str(planner_dir),
-        structured_idea=structured_idea,
-    )
+    # Load state from disk
+    state = load_state(project_path)
 
     graph = build_graph()
-    result_dict = graph.invoke(initial_state.model_dump())
-    return PlannerState(**result_dict)
+    result_dict = graph.invoke(state.model_dump())
+    
+    final_state = PlannerState(**result_dict)
+    
+    # Save state back to disk
+    save_state(final_state)
+    return final_state

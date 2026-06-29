@@ -60,3 +60,68 @@ class PlannerState(BaseModel):
         "",
         description="Last error message from a failed LLM call, for display to the user.",
     )
+    mode: str = Field(
+        "",
+        description="Startup mode: 'from_scratch' | 'ps_idea_hybrid'.",
+    )
+    sequence_index: int = Field(
+        0,
+        description="Current index in the main sequence.",
+    )
+    fit_analysis: str = Field(
+        "",
+        description="Fit analysis between PS and proposed solution in hybrid mode.",
+    )
+    active_revision_target: str = Field(
+        "",
+        description="The file currently in 'Needs Review' status.",
+    )
+    tracker_state: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parsed status mapping of Tracker.md.",
+    )
+    last_error: str = Field(
+        "",
+        description="Last LLM failure message, for retry mechanism.",
+    )
+    pending_updates: List[str] = Field(
+        default_factory=list,
+        description="Queue of pending update descriptions.",
+    )
+    change_context: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Current target file's change context during updates.",
+    )
+
+
+def load_state(project_path: str) -> PlannerState:
+    from pathlib import Path
+    import json
+    planner_dir = Path(project_path)
+    state_file = planner_dir / ".state.json"
+    
+    # Try loading StructuredIdea.md
+    si_path = planner_dir / "StructuredIdea.md"
+    structured_idea = si_path.read_text(encoding="utf-8").strip() if si_path.exists() else ""
+    
+    if state_file.exists():
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            data["project_path"] = str(planner_dir)
+            data["structured_idea"] = structured_idea
+            return PlannerState(**data)
+        except Exception:
+            pass
+            
+    return PlannerState(
+        project_path=str(planner_dir),
+        structured_idea=structured_idea,
+    )
+
+
+def save_state(state: PlannerState) -> None:
+    from pathlib import Path
+    planner_dir = Path(state.project_path)
+    if planner_dir.exists():
+        state_file = planner_dir / ".state.json"
+        state_file.write_text(state.model_dump_json(indent=2), encoding="utf-8")

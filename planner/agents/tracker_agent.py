@@ -6,13 +6,13 @@ Writes: Tracker.md
 from pathlib import Path
 from datetime import datetime
 from planner.state import PlannerState
-from planner.files.writer import write_planner_file
+from planner.tools import write_file
 
 # The canonical ordered list of planning files and their owning agents
 TRACKED_FILES = [
     ("RawIdea.md",           "user input"),
     ("StructuredIdea.md",    "structuring_agent"),
-    ("Constraints.md",       "user input"),
+    ("Constraints.md",       "constraints_agent"),
     ("PRD.md",               "prd_agent"),
     ("TRD.md",               "trd_agent"),
     ("Schema.md",            "schema_agent"),
@@ -32,8 +32,8 @@ def tracker_agent(state: PlannerState) -> PlannerState:
     rows.append(f"# Planner Tracker\n")
     rows.append(f"_Last updated: {now}_\n")
     rows.append("\n## Planning Files\n")
-    rows.append("| File | Status | Approved |")
-    rows.append("|------|--------|----------|")
+    rows.append("| File | Status | Agent | Notes |")
+    rows.append("|------|--------|-------|-------|")
 
     for filename, owner in TRACKED_FILES:
         path = planner_dir / filename
@@ -41,15 +41,27 @@ def tracker_agent(state: PlannerState) -> PlannerState:
         non_empty = exists and path.stat().st_size > 0
         approved = filename in state.approved_files
 
-        if not exists:
-            status = "⬜ Missing"
-        elif not non_empty:
-            status = "⬜ Empty"
+        # Determine status
+        if approved:
+            status = "✅ Approved"
+        elif state.current_file == filename and state.status == "needs_input":
+            status = "❌ Blocked"
+        elif state.current_file == filename:
+            status = "🔄 In Progress"
+        elif exists and non_empty:
+            status = "👀 Needs Review"
         else:
-            status = "✅ Done"
+            status = "⏳ Pending"
 
-        approved_mark = "✅" if approved else "—"
-        rows.append(f"| {filename} | {status} | {approved_mark} |")
+        notes = ""
+        if status == "❌ Blocked":
+            notes = "Waiting on user input/answers to questions."
+        elif status == "👀 Needs Review":
+            notes = "Draft complete. Waiting for user approval."
+        elif status == "✅ Approved":
+            notes = "Approved by user."
+
+        rows.append(f"| {filename} | {status} | {owner} | {notes} |")
 
     # Modules section
     modules_dir = planner_dir / "MODULES"
@@ -67,15 +79,17 @@ def tracker_agent(state: PlannerState) -> PlannerState:
 
     # Known blockers
     rows.append("\n## Blockers / Notes\n")
-    rows.append("_None recorded. Add blockers here manually if needed._\n")
+    if state.pending_questions:
+        rows.append("### Pending Questions:")
+        for q in state.pending_questions:
+            rows.append(f"- {q}")
+    else:
+        rows.append("_None recorded. Add blockers here manually if needed._\n")
 
     content = "\n".join(rows)
-    write_planner_file(planner_dir / "Tracker.md", content, force=True)
+    write_file(str(planner_dir / "Tracker.md"), content, overwrite=True)
 
     state.current_file = "Tracker.md"
     state.status = "drafting"
-    # Route back to orchestrator to evaluate whether the pipeline is fully complete.
-    # Do NOT route to "modules" here — modules are triggered explicitly by the user,
-    # not as part of the main planning sequence.
     state.next_agent = "orchestrator"
     return state

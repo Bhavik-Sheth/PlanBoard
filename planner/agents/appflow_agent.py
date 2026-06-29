@@ -5,7 +5,7 @@ Writes: AppFlow.md
 """
 from langchain_core.messages import SystemMessage, HumanMessage
 from planner.state import PlannerState
-from planner.agents._base import load_context, invoke_llm_safe, strip_markdown_fence, write_agent_file
+from planner.agents._base import load_context, invoke_llm_safe, strip_markdown_fence, write_agent_file, get_update_instructions
 
 SYSTEM_PROMPT = """You are a UX architect and product designer. Your job is to write AppFlow.md — 
 a complete user journey and navigation document for the application.
@@ -51,6 +51,10 @@ def appflow_agent(state: PlannerState) -> PlannerState:
         user_content += "\nAdditional context from user:\n"
         for q, a in state.grill_answers.items():
             user_content += f"- Q: {q}\n  A: {a}\n"
+
+    update_inst = get_update_instructions(state, "AppFlow.md")
+    if update_inst:
+        user_content += update_inst
 
     messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_content)]
     content = strip_markdown_fence(invoke_llm_safe(messages))

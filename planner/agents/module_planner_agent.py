@@ -9,8 +9,8 @@ or from the first unfilled module file found in MODULES/.
 from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from planner.state import PlannerState
-from planner.agents._base import load_context, invoke_llm_safe, strip_markdown_fence
-from planner.files.writer import write_planner_file
+from planner.agents._base import load_context, invoke_llm_safe, strip_markdown_fence, get_update_instructions
+from planner.tools import write_file
 
 SYSTEM_PROMPT = """You are a backend module designer. Your job is to write a minimal, focused module spec.
 
@@ -64,13 +64,17 @@ def module_planner_agent(state: PlannerState) -> PlannerState:
         for q, a in state.grill_answers.items():
             user_content += f"- Q: {q}\n  A: {a}\n"
 
+    update_inst = get_update_instructions(state, f"MODULES/{module_name}.md")
+    if update_inst:
+        user_content += update_inst
+
     messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_content)]
     content = strip_markdown_fence(invoke_llm_safe(messages))
 
     modules_dir = Path(state.project_path) / "MODULES"
     modules_dir.mkdir(exist_ok=True)
     module_path = modules_dir / f"{module_name}.md"
-    write_planner_file(module_path, content, force=True)
+    write_file(str(module_path), content, overwrite=True)
 
     state.current_file = f"MODULES/{module_name}.md"
     state.status = "done"

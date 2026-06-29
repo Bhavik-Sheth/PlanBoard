@@ -10,7 +10,7 @@ from typing import List, Literal, Optional
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from planner.llm import get_llm
+from planner.tools import get_llm_client
 
 
 class ChatAction(BaseModel):
@@ -118,7 +118,7 @@ def chat_orchestrator(
     messages.append(HumanMessage(content=user_message))
 
     # Invoke LLM with structured output
-    llm = get_llm()
+    llm = get_llm_client()
     structured_llm = llm.with_structured_output(ChatAction)
     result = structured_llm.invoke(messages)
     return result

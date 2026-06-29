@@ -29,7 +29,7 @@ def load_context(state: "PlannerState", *filenames: str) -> dict[str, str]:
     Read one or more files from disk into state.context_files (if not already cached).
     Returns a dict {filename: content} for the requested files.
     """
-    from planner.files.reader import read_planner_file
+    from planner.tools import read_file
 
     planner_dir = Path(state.project_path)
     result: dict[str, str] = {}
@@ -40,7 +40,7 @@ def load_context(state: "PlannerState", *filenames: str) -> dict[str, str]:
             continue
         path = planner_dir / name
         if path.exists():
-            content = read_planner_file(path, use_cache=False)
+            content = read_file(str(path))
             state.context_files[name] = content
             result[name] = content
         else:
@@ -56,11 +56,11 @@ def invoke_llm_safe(messages: list[BaseMessage]) -> str:
     On exception: print error, prompt user y/n, retry or raise PlannerAbortError.
     Returns the response content as a string.
     """
-    from planner.llm import get_llm
+    from planner.tools import get_llm_client
 
     while True:
         try:
-            llm = get_llm()
+            llm = get_llm_client()
             response = llm.invoke(messages)
             return str(response.content)
         except Exception as exc:
@@ -88,7 +88,50 @@ def strip_markdown_fence(text: str) -> str:
 
 def write_agent_file(state: "PlannerState", filename: str, content: str) -> None:
     """Write content to a file inside the PLANNER directory (force-overwrite for agent drafts)."""
-    from planner.files.writer import write_planner_file
+    from planner.tools import write_file
 
     path = Path(state.project_path) / filename
-    write_planner_file(path, content, force=True)
+    write_file(str(path), content, overwrite=True)
+
+
+def get_update_instructions(state: "PlannerState", filename: str) -> str:
+    """
+    If there is a change context active for the current file, return a prompt snippet
+    instructing the LLM to perform an update on the existing file instead of generating from scratch.
+    """
+    if not state.change_context:
+        return ""
+
+    cc = state.change_context
+    # Read current file content from disk (if it exists and is not empty)
+    from pathlib import Path
+    filepath = Path(state.project_path) / filename
+    existing_content = ""
+    if filepath.exists():
+        existing_content = filepath.read_text(encoding="utf-8").strip()
+
+    if not existing_content:
+        return ""
+
+    instruction = f"""
+======================================================================
+UPDATE INSTRUCTIONS (CRITICAL):
+We are updating this file ({filename}) to reflect a change in requirements or tech stack.
+Instead of writing from scratch, you MUST update the existing content below to apply the change.
+Ensure you preserve all other existing content, structure, and details that are unaffected by this change.
+
+Current File Content:
+\"\"\"
+{existing_content}
+\"\"\"
+
+Change Summary:
+- Change Type: {cc.get('change_type', 'N/A')}
+- What Changed: {cc.get('what_changed', 'N/A')}
+- What was before: {cc.get('what_was_before', 'N/A')}
+- Impact on this file: {cc.get('impact_on_this_file', 'N/A')}
+
+Modify the content above to implement the required changes. Return the full, updated document.
+======================================================================
+"""
+    return instruction

@@ -5,7 +5,7 @@ Writes: ImplementationPlan.md
 """
 from langchain_core.messages import SystemMessage, HumanMessage
 from planner.state import PlannerState
-from planner.agents._base import load_context, invoke_llm_safe, strip_markdown_fence, write_agent_file
+from planner.agents._base import load_context, invoke_llm_safe, strip_markdown_fence, write_agent_file, get_update_instructions
 
 SYSTEM_PROMPT = """You are a principal engineer who breaks large projects into phased implementation plans.
 Your job is to write ImplementationPlan.md.
@@ -55,6 +55,10 @@ def implementation_agent(state: PlannerState) -> PlannerState:
         user_content += "\nAdditional context from user:\n"
         for q, a in state.grill_answers.items():
             user_content += f"- Q: {q}\n  A: {a}\n"
+
+    update_inst = get_update_instructions(state, "ImplementationPlan.md")
+    if update_inst:
+        user_content += update_inst
 
     messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_content)]
     content = strip_markdown_fence(invoke_llm_safe(messages))
