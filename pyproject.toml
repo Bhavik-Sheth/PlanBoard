@@ -1,5 +1,5 @@
 [project]
-name = "plannerx"
+name = "planboard"
 version = "0.1.0"
 description = "AI-driven project planning CLI and TUI — generates PRD, TRD, Schema, and architecture docs via LangGraph agent pipelines."
 readme = "README.md"
@@ -32,12 +32,12 @@ dev = [
 ]
 
 [project.scripts]
-planner = "planner.main:app"
+planboard = "planboard.main:app"
 
 [tool.uv]
 package = true
 
 [tool.setuptools]
-packages = ["planner"]
+packages = ["planboard"]
 
 

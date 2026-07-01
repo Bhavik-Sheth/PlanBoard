@@ -2,7 +2,7 @@
 set -e
 
 echo "=================================================="
-echo "          PlannerX Installation Script           "
+echo "          PlanBoard Installation Script           "
 echo "=================================================="
 
 # Check if uv is installed, otherwise fall back to standard python/pip
@@ -39,7 +39,7 @@ else
     echo "📦 Installing dependencies from requirements.txt..."
     pip install -r requirements.txt
 
-    echo "📦 Installing PlannerX in editable mode..."
+    echo "📦 Installing PlanBoard in editable mode..."
     pip install -e .
 fi
 
@@ -53,8 +53,8 @@ else
 fi
 
 echo "=================================================="
-echo "🎉 PlannerX setup complete!"
+echo "🎉 PlanBoard setup complete!"
 echo "To launch the interactive TUI, run:"
 echo "    source .venv/bin/activate"
-echo "    planner"
+echo "    planboard"
 echo "=================================================="

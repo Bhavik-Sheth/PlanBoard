@@ -93,14 +93,14 @@ jsonpatch==1.33
 jsonpointer==3.1.1
     # via jsonpatch
 langchain-anthropic==1.4.8
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 langchain-classic==1.0.8
     # via langchain-community
 langchain-community==0.4.2
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 langchain-core==1.4.8
     # via
-    #   plannerx (pyproject.toml)
+    #   planboard (pyproject.toml)
     #   langchain-anthropic
     #   langchain-classic
     #   langchain-community
@@ -116,16 +116,16 @@ langchain-core==1.4.8
     #   langgraph-prebuilt
     #   langgraph-sdk
 langchain-groq==1.1.3
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 langchain-mistralai==1.1.5
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 langchain-nvidia-ai-endpoints==1.4.2
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 langchain-ollama==1.1.0
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 langchain-openai==1.3.3
     # via
-    #   plannerx (pyproject.toml)
+    #   planboard (pyproject.toml)
     #   langchain-together
 langchain-protocol==0.0.18
     # via
@@ -134,9 +134,9 @@ langchain-protocol==0.0.18
 langchain-text-splitters==1.1.2
     # via langchain-classic
 langchain-together==0.4.0
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 langgraph==1.2.7
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 langgraph-checkpoint==4.1.1
     # via
     #   langgraph
@@ -168,7 +168,7 @@ multidict==6.7.1
     #   yarl
 networkx==3.6.1
     # via
-    #   plannerx (pyproject.toml)
+    #   planboard (pyproject.toml)
     #   phart
 numpy==2.5.0
     # via langchain-community
@@ -189,7 +189,7 @@ packaging==26.2
     #   langsmith
     #   pytest
 phart==2.0.6
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 platformdirs==4.10.0
     # via textual
 pluggy==1.6.0
@@ -200,7 +200,7 @@ propcache==0.5.2
     #   yarl
 pydantic==2.13.4
     # via
-    #   plannerx (pyproject.toml)
+    #   planboard (pyproject.toml)
     #   anthropic
     #   groq
     #   langchain-anthropic
@@ -223,13 +223,13 @@ pygments==2.20.0
     #   textual
 pytest==9.1.1
     # via
-    #   plannerx (pyproject.toml:dev)
+    #   planboard (pyproject.toml:dev)
     #   pytest-mock
 pytest-mock==3.15.1
-    # via plannerx (pyproject.toml:dev)
+    # via planboard (pyproject.toml:dev)
 python-dotenv==1.2.2
     # via
-    #   plannerx (pyproject.toml)
+    #   planboard (pyproject.toml)
     #   pydantic-settings
 pyyaml==6.0.3
     # via
@@ -252,7 +252,7 @@ requests-toolbelt==1.0.0
     # via langsmith
 rich==15.0.0
     # via
-    #   plannerx (pyproject.toml)
+    #   planboard (pyproject.toml)
     #   textual
     #   typer
 shellingham==1.5.4
@@ -272,7 +272,7 @@ tenacity==9.1.4
     #   langchain-community
     #   langchain-core
 textual==8.2.8
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 tiktoken==0.13.0
     # via langchain-openai
 tokenizers==0.23.1
@@ -283,7 +283,7 @@ tqdm==4.68.3
     #   openai
 typer==0.26.8
     # via
-    #   plannerx (pyproject.toml)
+    #   planboard (pyproject.toml)
     #   huggingface-hub
 typing-extensions==4.15.0
     # via
@@ -314,7 +314,7 @@ uuid-utils==0.16.2
     #   langchain-core
     #   langsmith
 watchfiles==1.2.0
-    # via plannerx (pyproject.toml)
+    # via planboard (pyproject.toml)
 websockets==15.0.1
     # via
     #   langgraph-sdk
