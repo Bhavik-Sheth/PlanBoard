@@ -5,15 +5,43 @@ echo "=================================================="
 echo "          PlannerX Installation Script           "
 echo "=================================================="
 
-# Check if uv is installed
-if ! command -v uv &> /dev/null; then
-    echo "⚠️ 'uv' is not installed."
-    echo "Please install uv first (e.g., via 'curl -LsSf https://astral.sh/uv/install.sh | sh')"
-    exit 1
-fi
+# Check if uv is installed, otherwise fall back to standard python/pip
+if command -v uv &> /dev/null; then
+    echo "🚀 'uv' detected! Using uv for a faster installation..."
+    echo "📦 Synchronizing virtual environment and dependencies..."
+    if [ ! -d ".venv" ]; then
+        uv venv .venv
+    fi
+    source .venv/bin/activate
+    uv pip install -r requirements.txt
+    uv pip install -e .
+else
+    echo "⚠️ 'uv' is not installed. Falling back to standard python3 venv and pip..."
+    
+    # Check if python3 is installed
+    if ! command -v python3 &> /dev/null; then
+        echo "❌ Error: python3 is not installed. Please install Python 3.14+."
+        exit 1
+    fi
 
-echo "📦 Synchronizing virtual environment and dependencies..."
-uv sync
+    # Create virtual environment if it doesn't exist
+    if [ ! -d ".venv" ]; then
+        echo "⚙️ Creating virtual environment in .venv..."
+        python3 -m venv .venv
+    fi
+
+    echo "⚙️ Activating virtual environment..."
+    source .venv/bin/activate
+
+    echo "📦 Upgrading pip..."
+    pip install --upgrade pip
+
+    echo "📦 Installing dependencies from requirements.txt..."
+    pip install -r requirements.txt
+
+    echo "📦 Installing PlannerX in editable mode..."
+    pip install -e .
+fi
 
 # Setup .env if it doesn't exist
 if [ ! -f .env ]; then
@@ -27,5 +55,6 @@ fi
 echo "=================================================="
 echo "🎉 PlannerX setup complete!"
 echo "To launch the interactive TUI, run:"
-echo "    uv run planner"
+echo "    source .venv/bin/activate"
+echo "    planner"
 echo "=================================================="

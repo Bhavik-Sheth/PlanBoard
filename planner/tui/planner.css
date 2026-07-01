@@ -61,7 +61,7 @@ Horizontal {
 }
 
 #chat-input {
-    height: 3;
+    height: 5;
     border: solid #f0883e;
     border-title-align: left;
     background: #000000;
@@ -79,4 +79,11 @@ Horizontal {
     border-title-align: left;
     background: #090d13;
     color: #c9d1d9;
+}
+
+#viewer-log, #viewer-text-area {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #000000;
 }

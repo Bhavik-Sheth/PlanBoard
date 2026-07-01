@@ -27,6 +27,11 @@ class ArchitecturePanel(Static):
     """Top-right panel — displays SystemArchitecture.md (or SystemDesign.md) as rendered Markdown."""
     can_focus = True
 
+    BINDINGS = [
+        ("c", "copy_content", "Copy Content"),
+        ("ctrl+alt+c", "copy_content", "Copy Content"),
+    ]
+
     def __init__(self, planner_path: Path, **kwargs) -> None:
         super().__init__(**kwargs)
         self.planner_path = planner_path
@@ -88,3 +93,28 @@ class ArchitecturePanel(Static):
                     return
 
         self.update(_PLACEHOLDER)
+
+    def action_copy_content(self) -> None:
+        """Copy the active architecture diagram Markdown content to the system clipboard."""
+        candidates = [
+            self.planner_path / "ARCHITECTURE_DIAGRAMS" / "SystemArchitecture.md",
+            self.planner_path / "ARCHITECTURE_DIAGRAMS" / "SystemDesign.md",
+        ]
+        text_to_copy = ""
+        for candidate in candidates:
+            if candidate.exists():
+                try:
+                    text_to_copy = candidate.read_text(encoding="utf-8")
+                    break
+                except Exception:
+                    pass
+
+        if not text_to_copy:
+            text_to_copy = "No diagrams yet."
+
+        try:
+            self.app.copy_to_clipboard(text_to_copy)
+            self.border_subtitle = "[Copied diagram to clipboard!]"
+            self.set_timer(2.0, lambda: setattr(self, "border_subtitle", ""))
+        except Exception as e:
+            self.border_subtitle = f"[Copy failed: {e}]"
