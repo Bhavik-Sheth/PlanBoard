@@ -1,20 +1,22 @@
 """
 planboard/tui/widgets/viewer_panel.py
 
-ViewerPanel — mid-right panel that renders either live agent text logs
-or file content (editable) when a file is selected in the directory tree.
+ViewerPanel — mid-right panel that renders either live agent Markdown output
+or file content (editable/preview) when a file is selected in the directory tree.
+
+Output mode: accumulates raw markdown text and renders it live in the Markdown widget.
+File mode: shows markdown files in preview by default; Ctrl+T toggles to editor.
 """
 
 from collections import deque
 from pathlib import Path
-from rich.markdown import Markdown
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import RichLog, TextArea
+from textual.widgets import TextArea, Markdown, Label
 
 
 class ViewerPanel(Vertical):
-    """Viewer panel for displaying logs or Markdown/text file contents."""
+    """Viewer panel for displaying agent output as rendered Markdown, or file contents."""
 
     BINDINGS = [
         ("c", "copy_content", "Copy Content"),
@@ -26,19 +28,28 @@ class ViewerPanel(Vertical):
         self.mode = "output"
         self.active_file_path = None
         self._loading_file = False
-        # Use a bounded deque to prevent unbounded memory growth in long sessions.
+        self.is_preview_mode = True
+        self.thinking = None
+        self.markdown_widget = None
+        # Accumulates raw markdown text for the output panel
+        self._output_md: str = ""
+        # Keep a plain-text buffer for copy support (strips markup)
         self.output_buffer: deque[str] = deque(maxlen=500)
 
     def compose(self) -> ComposeResult:
-        yield RichLog(id="viewer-log", markup=True, wrap=True)
+        yield Markdown(id="viewer-markdown")
         yield TextArea(id="viewer-text-area")
+        yield Label("⚙ Thinking...", id="viewer-thinking")
 
     def on_mount(self) -> None:
-        self.rich_log = self.query_one("#viewer-log", RichLog)
+        self.markdown_widget = self.query_one("#viewer-markdown", Markdown)
         self.text_area = self.query_one("#viewer-text-area", TextArea)
-        self.text_area.display = False  # Start in output (log) mode
+        self.thinking = self.query_one("#viewer-thinking", Label)
+        # Start in output mode — Markdown widget is visible, TextArea hidden
+        self.text_area.display = False
         self.text_area.show_line_numbers = True
         self.text_area.soft_wrap = True
+        self.thinking.display = False
 
     def on_unmount(self) -> None:
         """Ensure any pending changes are saved when the widget is unmounted."""
@@ -48,9 +59,7 @@ class ViewerPanel(Vertical):
         """Save the current text area content to the active file."""
         if self.mode == "file" and self.active_file_path:
             try:
-                # Get current content from the text area
                 current_text = self.text_area.text
-                # Only write if the file content actually changed
                 if self.active_file_path.exists():
                     existing_text = self.active_file_path.read_text(encoding="utf-8")
                     if existing_text == current_text:
@@ -63,33 +72,61 @@ class ViewerPanel(Vertical):
         """Autosave when the edit text area loses focus."""
         self.save_current_file()
 
+    # -------------------------------------------------------------------------
+    # Output mode (agent responses rendered as Markdown)
+    # -------------------------------------------------------------------------
+
     def write_output(self, text: str) -> None:
-        """Append a log line in output mode, switching back to output mode if in file mode."""
+        """
+        Append agent output text and re-render the full accumulated markdown.
+        Switches back to output mode if currently viewing a file.
+        """
         self.save_current_file()
         self.active_file_path = None
+
+        # Track plain-text buffer for copy
         self.output_buffer.append(text)
+
+        # Accumulate raw markdown (text lines separated by newlines)
+        if self._output_md:
+            self._output_md += "\n" + text
+        else:
+            self._output_md = text
+
         if self.mode != "output":
             self.mode = "output"
-            self.rich_log.display = True
             self.text_area.display = False
-            self.rich_log.clear()
-            for line in self.output_buffer:
-                self.rich_log.write(line)
-        else:
-            self.rich_log.write(text)
+            self.markdown_widget.display = True
+            self.border_subtitle = ""
+
+        # Live-update the rendered markdown
+        self.markdown_widget.update(self._output_md)
+
+    def clear_output(self) -> None:
+        """Clear the output buffer and reset the markdown view."""
+        self.save_current_file()
+        self.output_buffer.clear()
+        self._output_md = ""
+        self.mode = "output"
+        self.active_file_path = None
+        self.text_area.display = False
+        self.markdown_widget.display = True
+        self.markdown_widget.update("")
+
+    # -------------------------------------------------------------------------
+    # File mode (open from file tree)
+    # -------------------------------------------------------------------------
 
     def show_file(self, path: Path) -> None:
-        """Switch to file mode and render the file content (editable)."""
-        # Save any edits on the previously opened file first
+        """Switch to file mode and render the file content."""
         self.save_current_file()
 
         self.mode = "file"
         self.active_file_path = path
-        self.rich_log.display = False
-        self.text_area.display = True
-        self.text_area.focus()
 
         if not path.exists():
+            self.markdown_widget.display = False
+            self.text_area.display = True
             self._loading_file = True
             self.text_area.text = f"Error: File {path} does not exist."
             self._loading_file = False
@@ -100,27 +137,76 @@ class ViewerPanel(Vertical):
             self._loading_file = True
             self.text_area.text = content
             self._loading_file = False
+
+            if path.suffix.lower() in (".md", ".markdown") and self.is_preview_mode:
+                self.text_area.display = False
+                self.markdown_widget.display = True
+                self.markdown_widget.update(content)
+                self.border_subtitle = "[Previewing — Ctrl+T to edit]"
+            else:
+                self.markdown_widget.display = False
+                self.text_area.display = True
+                self.text_area.focus()
+                if path.suffix.lower() in (".md", ".markdown"):
+                    self.border_subtitle = "[Editing — Ctrl+T to preview]"
+                else:
+                    self.border_subtitle = ""
         except Exception as e:
             self._loading_file = True
             self.text_area.text = f"Error reading file {path.name}: {e}"
             self._loading_file = False
 
-    def clear_output(self) -> None:
-        """Clear the output buffer and switch back to empty output mode."""
-        self.save_current_file()
-        self.output_buffer.clear()
-        self.mode = "output"
-        self.active_file_path = None
-        self.rich_log.display = True
-        self.text_area.display = False
-        self.rich_log.clear()
+    def action_toggle_mode(self) -> None:
+        """Toggle between preview and edit mode for Markdown files (called from app.py)."""
+        if self.mode == "file" and self.active_file_path:
+            suffix = self.active_file_path.suffix.lower()
+            if suffix in (".md", ".markdown"):
+                self.is_preview_mode = not self.is_preview_mode
+                if self.is_preview_mode:
+                    self.save_current_file()
+                    self.text_area.display = False
+                    self.markdown_widget.display = True
+                    try:
+                        content = self.active_file_path.read_text(encoding="utf-8")
+                        self.markdown_widget.update(content)
+                    except Exception:
+                        pass
+                    self.border_subtitle = "[Previewing — Ctrl+T to edit]"
+                else:
+                    self.markdown_widget.display = False
+                    self.text_area.display = True
+                    self.text_area.focus()
+                    self.border_subtitle = "[Editing — Ctrl+T to preview]"
+        elif self.mode == "output":
+            # In output mode, Ctrl+T scrolls to top / refreshes the view
+            self.markdown_widget.scroll_home()
+
+    # -------------------------------------------------------------------------
+    # Thinking indicator
+    # -------------------------------------------------------------------------
+
+    def show_thinking(self, show: bool) -> None:
+        """Show or hide the golden yellow thinking/processing indicator."""
+        if self.thinking is not None:
+            self.thinking.display = show
+
+    # -------------------------------------------------------------------------
+    # Copy content
+    # -------------------------------------------------------------------------
 
     def action_copy_content(self) -> None:
-        """Copy the current file or log output content to the system clipboard."""
+        """Copy the current file or agent output content to the system clipboard."""
         text_to_copy = ""
         if self.mode == "file":
-            text_to_copy = self.text_area.text
+            if self.active_file_path and self.active_file_path.exists():
+                try:
+                    text_to_copy = self.active_file_path.read_text(encoding="utf-8")
+                except Exception:
+                    text_to_copy = self.text_area.text
+            else:
+                text_to_copy = self.text_area.text
         else:
+            # Return raw accumulated markdown (strip any rich markup from output_buffer)
             from rich.text import Text
             clean_lines = []
             for line in self.output_buffer:
@@ -133,8 +219,8 @@ class ViewerPanel(Vertical):
         if text_to_copy:
             try:
                 self.app.copy_to_clipboard(text_to_copy)
+                old_subtitle = self.border_subtitle
                 self.border_subtitle = "[Copied content to clipboard!]"
-                self.set_timer(2.0, lambda: setattr(self, "border_subtitle", ""))
+                self.set_timer(2.0, lambda: setattr(self, "border_subtitle", old_subtitle))
             except Exception as e:
                 self.border_subtitle = f"[Copy failed: {e}]"
-

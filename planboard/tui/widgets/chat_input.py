@@ -98,7 +98,7 @@ class ChatInput(TextArea):
             self.cursor_location = (len(lines) - 1, len(lines[-1]))
         autocomplete.hide()
 
-    def on_changed(self, event: TextArea.Changed) -> None:
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
         """Handle content changes to update the suggestions dropdown."""
         try:
             autocomplete = self.app.query_one("#autocomplete-list")

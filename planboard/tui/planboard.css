@@ -81,9 +81,26 @@ Horizontal {
     color: #c9d1d9;
 }
 
-#viewer-log, #viewer-text-area {
+#viewer-text-area, #viewer-markdown {
     width: 100%;
-    height: 100%;
+    height: 1fr;
     border: none;
     background: #000000;
+}
+
+#viewer-markdown {
+    padding: 0 1;
+    color: #e6edf3;
+    background: #000000;
+    overflow-y: auto;
+}
+
+#viewer-thinking {
+    height: 1;
+    color: #FFD700; /* golden yellow */
+    background: #000000;
+    text-align: center;
+    width: 100%;
+    text-style: italic bold;
+    display: none; /* hidden by default */
 }

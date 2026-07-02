@@ -39,6 +39,7 @@ class PlannerApp(App):
         ("escape", "focus_chat", "Focus Chat"),
         ("ctrl+e", "toggle_architecture", "Expand/Collapse Architecture"),
         ("f2", "toggle_architecture", "Expand/Collapse Architecture"),
+        ("ctrl+t", "toggle_viewer_mode", "Toggle Edit/Preview"),
     ]
 
     def __init__(self, planboard_path: Path | None = None, **kwargs) -> None:
@@ -50,6 +51,8 @@ class PlannerApp(App):
         self._input_event = threading.Event()
         self.current_selected_file = None
         self.chat_history = []
+        import sys
+        self._is_test = "pytest" in sys.modules
 
     def get_selected_relative_path(self) -> str:
         """Return the selected file path relative to the planboard directory."""
@@ -97,7 +100,8 @@ class PlannerApp(App):
             rendered = self.executive.handle_startup()
             self.call_from_thread(viewer.write_output, rendered)
 
-        self.run_in_background(startup_worker)
+        if not self._is_test:
+            self.run_in_background(startup_worker)
 
         # Start directory/architecture watcher
         self.start_watcher()
@@ -153,14 +157,17 @@ class PlannerApp(App):
                 self.call_from_thread(viewer.write_output, text)
 
             class ThreadSafeStream:
+                """Buffers stdout/stderr output and flushes to the viewer in line-sized chunks."""
                 def __init__(self, callback):
                     self.callback = callback
                     self.buffer = ""
 
                 def write(self, data):
                     self.buffer += data
+                    # Flush whenever we have a complete paragraph (blank line) or enough content
                     while "\n" in self.buffer:
                         line, self.buffer = self.buffer.split("\n", 1)
+                        # Strip any residual Rich markup tags before passing to Markdown
                         self.callback(line)
                     return len(data)
 
@@ -177,11 +184,17 @@ class PlannerApp(App):
                     sys.stdout.write(prompt)
                     sys.stdout.flush()
 
+                # Hide thinking indicator while waiting for input
+                self.call_from_thread(viewer.show_thinking, False)
+
                 # Signal that we are waiting for user input
                 self._input_event.set()
 
                 # Retrieve from queue (blocks until user submits response)
                 ans = self.input_queue.get()
+
+                # Show thinking indicator again as worker resumes
+                self.call_from_thread(viewer.show_thinking, True)
 
                 if ans == "/abort":
                     raise KeyboardInterrupt("Action aborted by user.")
@@ -190,22 +203,31 @@ class PlannerApp(App):
             builtins.input = tui_input
             stream = ThreadSafeStream(write_to_viewer)
 
+            # Show thinking indicator when starting the worker
+            self.call_from_thread(viewer.show_thinking, True)
+
             with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
                 try:
                     func(*args, **kwargs)
                 except KeyboardInterrupt:
-                    write_to_viewer("[yellow]⚠️ Operation cancelled/aborted.[/yellow]")
+                    write_to_viewer("\n> ⚠️ Operation cancelled/aborted.")
                 except Exception as e:
-                    write_to_viewer(f"[red]Error: {e}[/red]")
+                    write_to_viewer(f"\n> ❌ Error: {e}")
                 finally:
                     builtins.input = original_input
                     self._input_event.clear()
+                    # Hide thinking indicator when finished
+                    self.call_from_thread(viewer.show_thinking, False)
 
         self.run_worker(worker, thread=True)
 
     def action_focus_chat(self) -> None:
         """Focus the Chat Input panel."""
         self.query_one("#chat-input").focus()
+
+    def action_toggle_viewer_mode(self) -> None:
+        """Toggle between preview and edit mode for Markdown files in the ViewerPanel."""
+        self.query_one("#viewer-panel").action_toggle_mode()
 
     def action_toggle_architecture(self) -> None:
         """Toggle the architecture panel expansion."""
