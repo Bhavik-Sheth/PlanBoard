@@ -282,6 +282,10 @@ class OrchestratorAgent:
 
         self.state = agent_fn(self.state)
 
+        # Invalidate the just-written file from the context cache so that
+        # any downstream specialist reads fresh content from disk (Bug #3 fix).
+        self.state.context_files.pop(target_file, None)
+
         # Validate file structure
         file_path = self.planboard_dir / target_file
         if target_file in REQUIRED_SECTIONS_MAP:
@@ -696,7 +700,11 @@ class OrchestratorAgent:
         return payload
 
     def handle_update(self, text: str) -> dict:
-        """Route to UpdatesAgent to analyze the change and return/execute UpdatePlan."""
+        """
+        Phase 1: Run UpdatesAgent analysis, store the plan in state, and return
+        a confirmation_required payload listing the blast radius.  The actual
+        execution happens in handle_update_confirmed() after the user says yes.
+        """
         from planboard.agents.updates_agent import UpdatesAgent
         from planboard.tools.tracker_tools import read_tracker
         from planboard.utils import resolve_agent
@@ -708,7 +716,7 @@ class OrchestratorAgent:
             path = self.planboard_dir / filename
             if path.exists() and path.stat().st_size > 0:
                 all_files[filename] = path.read_text(encoding="utf-8").strip()
-        
+
         # Also check MODULES/
         modules_dir = self.planboard_dir / "MODULES"
         if modules_dir.exists():
@@ -733,142 +741,100 @@ class OrchestratorAgent:
             all_files=all_files,
             tracker_state=tracker_state,
             grill_answers=self.state.grill_answers,
-            has_frontend=self.state.has_frontend
+            has_frontend=self.state.has_frontend,
         )
 
-        # 3. If UpdatePlan.needs_clarification
+        # 3. If analysis needs clarification → route to question flow
         if plan.get("needs_clarification"):
-            print("\n⚠️ Confidence in change specification is LOW. Asking clarifying questions...")
-            self.state.pending_questions = plan["ambiguous_parts"]
+            self.state.pending_questions = plan.get("ambiguous_parts", [])
             self.state.calling_agent = "updates"
             self.state.status = "needs_input"
             save_state(self.state)
-
-            while self.state.pending_questions:
-                from planboard.agents.griller_agent import griller_agent
-                self.state = griller_agent(self.state)
-                save_state(self.state)
-                if self.state.active_suggestion:
-                    from planboard.agents.tech_stack_agent import tech_stack_agent
-                    self.state = tech_stack_agent(self.state)
-                    save_state(self.state)
-
-            # Re-call UpdatesAgent with clarified change_description
-            from planboard.state import load_state
-            self.state = load_state(self.state.project_path)
-            
-            grill_answers_str = "\n".join(f"- Q: {q}\n  A: {a}" for q, a in self.state.grill_answers.items())
-            clarified_desc = f"{text}\n\nClarifying Details:\n{grill_answers_str}"
-            
-            plan = agent.run_analysis(
-                change_description=clarified_desc,
-                structured_idea=structured_idea,
-                all_files=all_files,
-                tracker_state=tracker_state,
-                grill_answers=self.state.grill_answers,
-                has_frontend=self.state.has_frontend
+            return self._payload(
+                "question",
+                text=self.state.pending_questions[0] if self.state.pending_questions else "Please clarify the change.",
+                reason="Low confidence in change specification.",
+                source_agent="updates",
             )
 
-        # 4. If UpdatePlan.has_conflicts:
+        # 4. Handle in-progress conflicts — inform user but proceed automatically
         if plan.get("has_conflicts"):
-            print(f"\n⚠️  Conflict: The following files are currently In Progress: {', '.join(plan['conflict_files'])}")
-            try:
-                choice = input("Halt current run and apply change? [yes / no]: ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                choice = "no"
-            if choice not in ("y", "yes"):
-                print("Update aborted.")
-                return self._payload("error", agent="Updates", message="Update aborted due to conflict.")
-            
-            # Mark conflict files as Pending in Tracker
-            for fname in plan["conflict_files"]:
-                self._update_tracker(fname, "⏳ Pending", f"{resolve_agent(fname) or 'agent'}", "Conflict resolved, re-running")
-                # Remove from approved_files if they were there
+            for fname in plan.get("conflict_files", []):
+                self._update_tracker(
+                    fname, "⏳ Pending", f"{resolve_agent(fname) or 'agent'}",
+                    "Conflict resolved by update, re-running"
+                )
                 if fname in self.state.approved_files:
                     self.state.approved_files.remove(fname)
             save_state(self.state)
 
-        # 5. Send Blast Radius Report (print/interactive proceed)
-        print(f"\n📋 Change detected: {plan['change_summary']['what_changed']}")
-        print("\nFiles that need updating:")
-        for entry in plan["blast_radius"]:
-            print(f"  • {entry['file']} (Reason: {entry['reason']})")
+        # 5. Store the plan and request user confirmation before execution
+        self.state.active_update_plan = plan
+        save_state(self.state)
 
-        all_standard_files = ["Constraints.md", "PRD.md", "TRD.md", "Schema.md", "DesignDecisions.md", "AppFlow.md", "Rules.md", "ImplementationPlan.md"]
-        existing_modules = []
-        if modules_dir.exists():
-            existing_modules = [f"MODULES/{f.name}" for f in modules_dir.glob("*.md") if f.is_file()]
-        all_check_files = all_standard_files + existing_modules
+        blast_radius = plan.get("blast_radius", [])
+        change_summary = plan.get("change_summary", {})
 
-        affected_set = {entry["file"] for entry in plan["blast_radius"]}
-        unchanged = [f for f in all_check_files if f not in affected_set and (self.planboard_dir / f).exists()]
-        if unchanged:
-            print("\nFiles NOT affected (unchanged):")
-            for f in unchanged:
-                print(f"  • {f}")
+        # Build a readable confirmation message
+        what_changed = change_summary.get("what_changed", text)
+        affected_lines = "\n".join(
+            f"- **{e['file']}**: {e.get('reason', '')}" for e in blast_radius
+        )
+        conflict_note = ""
+        if plan.get("has_conflicts"):
+            conflict_note = (
+                f"\n\n> ⚠️ Conflict: `{', '.join(plan.get('conflict_files', []))}` "
+                "were in-progress and have been reset to Pending."
+            )
 
-        proceed = True
-        while True:
-            try:
-                choice = input("\nProceed with updates? [yes / no / show details]: ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                choice = "no"
-            if choice in ("no", "n"):
-                print("Updates aborted.")
-                proceed = False
-                break
-            elif choice in ("yes", "y"):
-                proceed = True
-                break
-            elif "detail" in choice or choice == "d" or choice == "show":
-                print("\nChange Summary Details:")
-                print(f"  Type:                  {plan['change_summary']['change_type']}")
-                print(f"  What changed:          {plan['change_summary']['what_changed']}")
-                print(f"  What was there before: {plan['change_summary']['what_was_before']}")
-                print(f"  What replaces it:      {plan['change_summary']['what_replaces_it']}")
-                print(f"\nReasoning: (calculated via blast radius analysis)")
-            else:
-                print("Invalid choice. Please type 'yes', 'no', or 'show details'.")
+        warning = (
+            f"**Change detected:** {what_changed}"
+            f"{conflict_note}\n\n"
+            f"**Files that need updating:**\n{affected_lines}\n\n"
+            "Proceed? [yes / no]"
+        )
 
-        if not proceed:
-            return self._payload("error", agent="Updates", message="Update cancelled by user.")
+        return self._payload(
+            "confirmation_required",
+            action="update",
+            warning=warning,
+            _waiting_for="update_confirm",
+        )
 
-        # 6. On user confirms:
+    def handle_update_confirmed(self) -> dict:
+        """
+        Phase 2: The user confirmed the update blast-radius plan.
+        Apply frontend flag changes, remove blast-radius files from approved list,
+        and execute handle_run() to start re-generating them.
+        """
+        plan = self.state.active_update_plan
+        if not plan:
+            return self._payload("error", agent="Updates", message="No active update plan.")
+
+        # Apply frontend changes if any
         if plan.get("frontend_changed"):
             self.state.has_frontend = plan["new_frontend_value"]
-            save_state(self.state)
-            print(f"ℹ️ Project frontend status changed to {plan['new_frontend_value']}.")
             if not self.state.has_frontend:
                 for target in ["DesignDecisions.md", "AppFlow.md"]:
                     if target not in self.state.approved_files:
                         self.state.approved_files.append(target)
-                    self._update_tracker(
-                        target,
-                        "✅ Approved",
-                        "orchestrator",
-                        "Skipped (backend-only)",
-                    )
+                    self._update_tracker(target, "✅ Approved", "orchestrator", "Skipped (backend-only)")
             else:
                 for target in ["DesignDecisions.md", "AppFlow.md"]:
                     if target in self.state.approved_files:
                         self.state.approved_files.remove(target)
-                    self._update_tracker(
-                        target,
-                        "⏳ Pending",
-                        "orchestrator",
-                        notes=""
-                    )
+                    self._update_tracker(target, "⏳ Pending", "orchestrator", notes="")
 
-        # Remove blast radius files from approved list
+        # Remove blast radius files from approved list so handle_run re-generates them
         blast_radius_files = [entry["file"] for entry in plan.get("blast_radius", [])]
-        self.state.approved_files = [f for f in self.state.approved_files if f not in blast_radius_files]
-        
-        # Save plan to state
-        self.state.active_update_plan = plan
+        self.state.approved_files = [
+            f for f in self.state.approved_files if f not in blast_radius_files
+        ]
         save_state(self.state)
 
-        # 7. Execute blast radius
+        # Execute the first blast-radius file
         return self.handle_run()
+
 
     def handle_abort_update(self) -> dict:
         """Abort the active update run, marking remaining blast radius files as Blocked."""
@@ -1057,6 +1023,7 @@ class OrchestratorAgent:
             "get_status":       lambda: self.handle_get_status(),
             "chat":             lambda: self.handle_chat(command.get("text", "")),
             "update":           lambda: self.handle_update(command.get("text", "")),
+            "update_confirmed": lambda: self.handle_update_confirmed(),
             "abort_update":     lambda: self.handle_abort_update(),
             "module_add":       lambda: self.handle_module_add(command.get("name", "")),
             "module_list":      lambda: self.handle_module_list(),

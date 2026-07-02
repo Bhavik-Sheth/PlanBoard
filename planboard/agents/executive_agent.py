@@ -57,6 +57,8 @@ class ExecutiveAgent:
             "pending_command": {},
             "last_display": "",
         }
+        # Conversational history for chat_orchestrator context window
+        self.chat_history: list[dict] = []
 
     # ── Input Parsing ──────────────────────────────────────────────────
 
@@ -160,8 +162,9 @@ class ExecutiveAgent:
                 "request": raw,
             }
 
-        # Otherwise treat as general chat
-        return {"command": "chat", "text": raw}
+        # Otherwise, route through chat_orchestrator for intent classification
+        # so the user can speak naturally and still trigger real pipeline actions.
+        return {"command": "_chat_classify", "text": raw}
 
     # ── Output Rendering ───────────────────────────────────────────────
 
@@ -322,12 +325,12 @@ class ExecutiveAgent:
             return payload.get("text", "")
 
         elif ptype == "confirmation_required":
-            action = payload.get("action", "?")
             warning = payload.get("warning", "")
-            lines = [f"⚠️  {warning}", "", "Confirm? [yes / no]"]
-            self.exec_state["waiting_for"] = "reset_confirm"
+            # Use the payload's _waiting_for hint if provided, else default to reset_confirm
+            waiting_key = payload.get("_waiting_for", "reset_confirm")
+            self.exec_state["waiting_for"] = waiting_key
             self.exec_state["pending_command"] = payload
-            return "\n".join(lines)
+            return warning
 
         elif ptype == "sequence_complete":
             return (
@@ -386,13 +389,17 @@ class ExecutiveAgent:
 
     # ── Main processing entry point ────────────────────────────────────
 
-    def process(self, raw_input: str) -> tuple[Optional[dict], str]:
+    def process(
+        self,
+        raw_input: str,
+        active_file: str = "",
+    ) -> tuple[Optional[dict], str]:
         """
         Main entry point.  Takes raw user input, returns:
           (command_sent_to_orchestrator, rendered_output_for_user)
 
-        If the command is handled locally (help, validation error, config, edit, diagram),
-        the first element is None or the handled command.
+        active_file: the file currently open in the viewer (forwarded to
+                     chat_orchestrator for context-aware intent classification).
         """
         # Check if we're waiting for a specific response
         if self.exec_state["waiting_for"]:
@@ -445,12 +452,154 @@ class ExecutiveAgent:
             except Exception as e:
                 return parsed, f"⚠️  Diagram generation failed: {e}"
 
+        # ── Chat intent classification ──────────────────────────────
+        # When the user sends plain text, classify their intent via LLM
+        # and translate it into the appropriate orchestrator command.
+        if parsed.get("command") == "_chat_classify":
+            parsed, rendered = self._handle_chat_classify(
+                parsed["text"], active_file
+            )
+            self.exec_state["last_display"] = rendered
+            return parsed, rendered
+
         # Route to Orchestrator
         payload = self.orchestrator.dispatch(parsed)
         rendered = self.render_payload(payload)
         self.exec_state["last_display"] = rendered
 
+        # Keep chat history updated for slash commands too
+        self.chat_history.append({"role": "user", "content": raw_input})
+        self.chat_history.append({"role": "assistant", "content": rendered})
+        # Keep history bounded to last 20 turns
+        if len(self.chat_history) > 40:
+            self.chat_history = self.chat_history[-40:]
+
         return parsed, rendered
+
+    def _handle_chat_classify(
+        self, text: str, active_file: str
+    ) -> tuple[Optional[dict], str]:
+        """
+        Classify plain-text user input using chat_orchestrator, then dispatch
+        the appropriate real pipeline command. Returns (cmd, rendered_output).
+        """
+        from planboard.agents.chat_orchestrator import chat_orchestrator
+        from planboard.tools import list_planboard_files
+
+        # Gather workspace context for the classifier
+        existing_files = list(
+            list_planboard_files(str(Path(self.state.project_path).parent)).keys()
+        )
+
+        try:
+            action = chat_orchestrator(
+                user_message=text,
+                chat_history=self.chat_history,
+                existing_files=existing_files,
+                active_file=active_file,
+            )
+        except Exception as exc:
+            # If LLM classification fails, fall back to a plain chat response
+            fallback_cmd = {"command": "chat", "text": text}
+            payload = self.orchestrator.dispatch(fallback_cmd)
+            rendered = self.render_payload(payload)
+            self._update_history(text, rendered)
+            return fallback_cmd, rendered
+
+        # Always show the LLM's friendly description of what it's doing first
+        prefix = action.response_message.strip() if action.response_message else ""
+
+        # Map ChatAction.action → orchestrator command
+        cmd: Optional[dict] = None
+        action_rendered = ""
+
+        if action.action == "chat":
+            # Pure conversational reply — no pipeline action needed
+            action_rendered = prefix
+            cmd = None
+
+        elif action.action == "init":
+            cmd = {"command": "init"}
+
+        elif action.action == "describe":
+            if not action.text_content:
+                action_rendered = prefix + "\n\n> ⚠️ Could not extract idea text. Please use `/describe <your idea>` directly."
+                cmd = None
+            else:
+                cmd = {"command": "describe", "text": action.text_content}
+
+        elif action.action == "run":
+            cmd = {"command": "run"}
+
+        elif action.action == "status":
+            cmd = {"command": "status"}
+
+        elif action.action == "approve":
+            target = action.target_file or self.state.active_revision_target
+            if not target:
+                action_rendered = prefix + "\n\n> ⚠️ Could not determine which file to approve. Use `/approve <file>` directly."
+                cmd = None
+            else:
+                cmd = {"command": "approve", "file": target}
+
+        elif action.action == "reset":
+            target = action.target_file
+            if not target:
+                action_rendered = prefix + "\n\n> ⚠️ Could not determine which file to reset. Use `/reset <file>` directly."
+                cmd = None
+            else:
+                cmd = {"command": "reset", "file": target}
+
+        elif action.action == "module_add":
+            name = action.module_name
+            if not name:
+                action_rendered = prefix + "\n\n> ⚠️ Could not determine module name. Use `/module add <name>` directly."
+                cmd = None
+            else:
+                cmd = {"command": "module_add", "name": name}
+
+        elif action.action == "module_list":
+            cmd = {"command": "module_list"}
+
+        elif action.action == "consistency":
+            cmd = {"command": "consistency"}
+
+        elif action.action == "finalize":
+            cmd = {"command": "finalize"}
+
+        elif action.action == "change_request":
+            target = action.target_file or self.state.active_revision_target
+            change_text = action.text_content or text
+            if not target:
+                action_rendered = prefix + "\n\n> ⚠️ Could not determine which file to update. Use `/update <description>` or mention the file name."
+                cmd = None
+            else:
+                cmd = {"command": "revise", "target": target, "request": change_text}
+
+        else:
+            # Unknown action — fall back to chat
+            cmd = {"command": "chat", "text": text}
+
+        # If we have a real command to dispatch, do it
+        if cmd is not None:
+            payload = self.orchestrator.dispatch(cmd)
+            pipeline_rendered = self.render_payload(payload)
+            if prefix:
+                rendered = f"{prefix}\n\n{pipeline_rendered}"
+            else:
+                rendered = pipeline_rendered
+        else:
+            rendered = action_rendered
+
+        self._update_history(text, rendered)
+        return cmd, rendered
+
+    def _update_history(self, user_msg: str, assistant_msg: str) -> None:
+        """Append a turn to chat_history, keeping it bounded to 20 turns."""
+        self.chat_history.append({"role": "user", "content": user_msg})
+        self.chat_history.append({"role": "assistant", "content": assistant_msg})
+        if len(self.chat_history) > 40:
+            self.chat_history = self.chat_history[-40:]
 
     def _handle_config_action(self, arg: str) -> str:
         from planboard.tools import (
@@ -644,6 +793,19 @@ class ExecutiveAgent:
                 return None, "Invalid choice. Please enter 1 or 2."
             payload = self.orchestrator.dispatch(cmd)
             return cmd, self.render_payload(payload)
+
+        elif waiting == "update_confirm":
+            self.exec_state["waiting_for"] = ""
+            if raw_lower in ("yes", "y"):
+                cmd = {"command": "update_confirmed"}
+                payload = self.orchestrator.dispatch(cmd)
+                return cmd, self.render_payload(payload)
+            else:
+                # Cancel: clear the stored plan
+                self.orchestrator.state.active_update_plan = None
+                from planboard.state import save_state
+                save_state(self.orchestrator.state)
+                return None, "Update cancelled."
 
         # Fallback — clear waiting state
         self.exec_state["waiting_for"] = ""

@@ -278,21 +278,28 @@ class PlannerApp(App):
         if self._input_event.is_set():
             self._input_event.clear()
             viewer = self.query_one("#viewer-panel")
-            viewer.write_output(f"[bold cyan]Answer: {cmd}[/bold cyan]")
+            viewer.write_output(f"> **Answer:** {cmd}")
             self.input_queue.put(cmd)
             return
 
         # 2. Process using ExecutiveAgent in a background thread
+        # Capture the currently open file for context-aware intent classification
+        active_file = self.get_selected_relative_path()
+
         def run_cmd():
-            parsed_cmd, rendered_output = self.executive.process(cmd)
-            
+            parsed_cmd, rendered_output = self.executive.process(cmd, active_file=active_file)
+
             # Print output thread-safely to viewer
             self.call_from_thread(self.query_one("#viewer-panel").write_output, rendered_output)
-            
-            # If the command changed active workspace files, reload UI tree/diagram
+
+            # Reload UI tree/diagram after any command that creates or modifies files
             if parsed_cmd:
                 cmd_type = parsed_cmd.get("command")
-                if cmd_type in ("init", "reset", "reset_confirmed", "edit", "approve"):
+                file_writing_cmds = {
+                    "init", "describe", "run", "reset", "reset_confirmed",
+                    "edit", "approve", "revise", "module_add", "update_confirmed",
+                }
+                if cmd_type in file_writing_cmds:
                     self.call_from_thread(self.query_one("#file-tree").reload)
                 if cmd_type in ("diagram",):
                     self.call_from_thread(self.query_one("#architecture-panel").refresh_diagram)
