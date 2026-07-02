@@ -67,11 +67,26 @@ The planning files and execution sequence are:
 7. module_add: adds a new module spec under MODULES/.
 8. module_list: lists module specs.
 9. consistency: audits all documents for contradictions.
-10. finalize: compiles CLAUDE.md when planning is complete.
+10. finalize: compiles CLAUDE.md (inside PLANBOARD/) when planning is complete.
 11. change_request: re-runs a specialist agent to update an existing document with user feedback/changes.
 
+PLANBOARD/ Directory Structure:
+- Top-level files: RawIdea.md, StructuredIdea.md, Constraints.md, PRD.md, TRD.md, Schema.md,
+  DesignDecisions.md, AppFlow.md, Rules.md, ImplementationPlan.md, Tracker.md, CLAUDE.md
+- MODULES/ subdirectory: contains per-module spec files named <ModuleName>.md
+  (e.g. MODULES/Auth.md, MODULES/Database.md, MODULES/API.md)
+- ARCHITECTURE_DIAGRAMS/ subdirectory: contains diagram files
+  (SystemDesign.md, SystemArchitecture.md, FolderStructure.md, DataFlow.md)
+
+IMPORTANT — File targeting for subdirectory files:
+- When the user refers to a module file, set target_file to the FULL relative path including the subdirectory:
+  e.g. "MODULES/Auth.md", "MODULES/Database.md"
+- When the user refers to a diagram file, set target_file to: 
+  e.g. "ARCHITECTURE_DIAGRAMS/SystemDesign.md"
+- For top-level planning files, use just the filename: e.g. "PRD.md", "TRD.md"
+
 Here is the context of what currently exists in the workspace:
-- Existing files in PLANBOARD/: {existing_files}
+- Existing files in PLANBOARD/ (includes MODULES/ and ARCHITECTURE_DIAGRAMS/ subdirectories): {existing_files}
 - Currently active/opened file: {active_file}
 
 Analyze the user's message and the conversation history:
@@ -86,11 +101,13 @@ Analyze the user's message and the conversation history:
 - If the user asks to list modules, set action to "module_list".
 - If the user wants to run a consistency check or look for contradictions, set action to "consistency".
 - If the user says planning is done, they want to finalize, or compile CLAUDE.md, set action to "finalize".
-- If the user wants to make a change/iteration on a document (e.g. "change the database to Postgres in TRD.md", "in PRD.md add a section on security", "update Rules.md to use camelCase"), set action to "change_request", specify the filename in `target_file` (resolve from user text or conversation context), and put the feedback description in `text_content`.
+- If the user wants to make a change/iteration on a document (e.g. "change the database to Postgres in TRD.md", "in PRD.md add a section on security", "update Rules.md to use camelCase", "update the Auth module"), set action to "change_request", specify the filename in `target_file` (resolve from user text or conversation context), and put the feedback description in `text_content`.
 
 Important heuristics for `change_request`:
 - If the user says "add X", "change Y", "modify Z", or provides feedback, and there is a currently active/opened file (e.g. active file is PRD.md), assume they want to modify the active file unless they name another file in the message.
-- Always fill `target_file` with the resolved file name (e.g. "PRD.md", "TRD.md") matching the keys in the registry.
+- Always fill `target_file` with the resolved file name (e.g. "PRD.md", "TRD.md", "MODULES/Auth.md") matching the keys in the registry.
+- For module files, ALWAYS include the "MODULES/" prefix in target_file (e.g. "MODULES/Auth.md", NOT just "Auth.md").
+- For diagram files, ALWAYS include the "ARCHITECTURE_DIAGRAMS/" prefix in target_file.
 
 Be friendly, professional, and clear. Explain what action you are taking in `response_message`.
 """

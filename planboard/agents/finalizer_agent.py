@@ -92,7 +92,7 @@ _CONTEXT_BINDING_SECTION = """\
 
 ## Context Binding & Coding Instructions
 
-This file serves as the master execution context for any coding agent \
+This file (PLANBOARD/CLAUDE.md) serves as the master execution context for any coding agent \
 (such as Claude Code or another coding AI) operating on this repository.
 
 ### Context Guidelines:

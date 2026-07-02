@@ -545,9 +545,8 @@ class OrchestratorAgent:
 
         result = finalizer_agent(files)
 
-        # Write CLAUDE.md to project root
-        project_root = self.planboard_dir.parent
-        claude_path = project_root / "CLAUDE.md"
+        # Write CLAUDE.md inside PLANBOARD/ alongside PRD.md, TRD.md, etc.
+        claude_path = self.planboard_dir / "CLAUDE.md"
         write_file(str(claude_path), result["claude_md_content"], overwrite=True)
 
         return self._payload(
@@ -670,8 +669,8 @@ class OrchestratorAgent:
             affected_files=blast_radius_files
         )
         
-        # 8d. Warn if CLAUDE.md exists
-        claude_path = self.planboard_dir.parent / "CLAUDE.md"
+        # 8d. Warn if CLAUDE.md exists (now lives inside PLANBOARD/)
+        claude_path = self.planboard_dir / "CLAUDE.md"
         stale_warning = ""
         if claude_path.exists():
             stale_warning = "CLAUDE.md is now out of date. Re-run /finalize to regenerate."
@@ -863,23 +862,19 @@ class OrchestratorAgent:
 
 
     def handle_module_add(self, name: str) -> dict:
-        """Run module planboard for a new module."""
-        from planboard.agents.module_planboard_agent import module_planboard_agent
-
+        """Run module planboard for a new module via _call_specialist for proper phase management."""
+        # Ensure module name is set before _call_specialist calls gather phase
         self.state.context_files["__module_name__"] = name
         if not self.state.structured_idea:
             si_path = self.planboard_dir / "StructuredIdea.md"
             if si_path.exists():
                 self.state.structured_idea = si_path.read_text(encoding="utf-8")
 
-        module_planboard_agent(self.state)
-
-        return self._payload(
-            "file_complete",
-            file=f"MODULES/{name}.md",
-            summary=[f"Module spec '{name}' generated."],
-            agent="module_planboard_agent",
-        )
+        # Route through _call_specialist which handles gather/write phases, cache
+        # invalidation, tracker updates, validation, and summary generation.
+        # Previously, calling module_planboard_agent() directly when state.phase was
+        # "done" (after the main pipeline) caused it to return without writing anything.
+        return self._call_specialist("modules", f"MODULES/{name}.md")
 
     def handle_module_list(self) -> dict:
         """List all modules."""

@@ -12,6 +12,7 @@ Commands:
   planboard module list       → list modules
   planboard consistency       → cross-file consistency check
   planboard finalize          → compile CLAUDE.md (planning done)
+  planboard upgrade           → pull latest from GitHub and upgrade the global install
 """
 import sys
 from pathlib import Path
@@ -37,10 +38,35 @@ def _planboard_dir() -> Path:
 def main(ctx: typer.Context) -> None:
     """
     Launch the TUI when no subcommand is specified.
+    If PLANBOARD/ does not exist in the current directory, it is automatically
+    initialized first — enabling PlanBoard to work as a global tool called
+    from any project folder.
     """
     if ctx.invoked_subcommand is None:
         from planboard.tui.app import PlannerApp
         planboard_dir = _planboard_dir()
+
+        # Auto-init: scaffold PLANBOARD/ in CWD if it doesn't exist yet.
+        # This makes the global `planboard` command work from any directory
+        # without needing a separate `planboard init` step.
+        if not planboard_dir.exists():
+            typer.echo(f"🗂  No PLANBOARD/ found in {planboard_dir.parent}.")
+            typer.echo("⚙️  Initializing PlanBoard for this directory...")
+            try:
+                from planboard.tools import scaffold_planboard
+                from planboard.tools.tracker_tools import initialize_tracker
+                _TRACKER_SEQUENCE = [
+                    "StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md",
+                    "Schema.md", "DesignDecisions.md", "AppFlow.md", "Rules.md",
+                    "ImplementationPlan.md", "MODULES/",
+                ]
+                scaffold_planboard(str(planboard_dir.parent))
+                initialize_tracker(str(planboard_dir.parent), _TRACKER_SEQUENCE)
+                typer.echo(f"✅  PLANBOARD/ created at {planboard_dir}")
+            except Exception as e:
+                typer.echo(f"[ERROR] Auto-init failed: {e}", err=True)
+                raise typer.Exit(1)
+
         tui_app = PlannerApp(planboard_path=planboard_dir)
         tui_app.run()
 
@@ -467,7 +493,7 @@ def finalize_cmd() -> None:
 
     typer.echo("⏳  Compiling CLAUDE.md...")
     _compile_claude_md(str(planboard_dir))
-    typer.echo("✅  CLAUDE.md written to project root. Planning phase complete.")
+    typer.echo("✅  CLAUDE.md written to PLANBOARD/. Planning phase complete.")
 
 
 def _compile_claude_md(planboard_path: str) -> None:
@@ -500,12 +526,75 @@ def _compile_claude_md(planboard_path: str) -> None:
 
     result = finalizer_agent(files)
 
-    claude_path = project_root / "CLAUDE.md"
+    # Write CLAUDE.md inside PLANBOARD/ alongside PRD.md, TRD.md, etc.
+    claude_path = planboard_dir / "CLAUDE.md"
     write_file(str(claude_path), result["claude_md_content"], overwrite=True)
 
     if result.get("warnings"):
         for w in result["warnings"]:
             typer.echo(f"  ⚠️  {w}")
+
+
+# ─────────────────────────────────────────────
+# Upgrade command
+# ─────────────────────────────────────────────
+
+_REPO_URL = "https://github.com/Bhavik-Sheth/PlanBoard.git"
+
+@app.command("upgrade")
+def upgrade() -> None:
+    """
+    Upgrade PlanBoard to the latest version from GitHub.
+
+    Auto-detects whether it was installed via pipx or uv tool and runs
+    the appropriate upgrade command. Run this after pushing changes to GitHub.
+    """
+    import subprocess
+
+    exe = sys.executable  # e.g. ~/.local/share/pipx/venvs/planboard/bin/python
+
+    # ── Detect install method from the Python executable path ──────────────
+    is_pipx = "pipx" in exe
+    is_uv   = ("uv" in exe and "tools" in exe) or ".local/share/uv" in exe
+
+    typer.echo("🔄 Upgrading PlanBoard from GitHub...")
+    typer.echo(f"   Source: {_REPO_URL}\n")
+
+    if is_pipx:
+        typer.echo("📦 Detected pipx install — running: pipx upgrade planboard")
+        result = subprocess.run(
+            ["pipx", "upgrade", "planboard"],
+            capture_output=False,
+        )
+    elif is_uv:
+        typer.echo("📦 Detected uv tool install — running: uv tool upgrade planboard")
+        result = subprocess.run(
+            ["uv", "tool", "upgrade", "planboard"],
+            capture_output=False,
+        )
+    else:
+        # Neither detected — try pipx first, then uv tool
+        typer.echo("🔍 Install method not detected, trying pipx then uv tool...\n")
+        result = subprocess.run(["pipx", "upgrade", "planboard"])
+        if result.returncode != 0:
+            typer.echo("\n↩️  pipx failed, trying uv tool...")
+            result = subprocess.run(["uv", "tool", "upgrade", "planboard"])
+
+        if result.returncode != 0:
+            typer.echo(
+                "\n⚠️  Could not auto-upgrade. Run one of these manually:\n"
+                f"   pipx install {_REPO_URL} --force\n"
+                f"   uv tool install {_REPO_URL} --force\n",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+    if result.returncode == 0:
+        typer.echo("\n✅ PlanBoard upgraded successfully!")
+        typer.echo("   Run `planboard` in any project directory to use the new version.")
+    else:
+        typer.echo("\n❌ Upgrade failed. Check the output above for details.", err=True)
+        raise typer.Exit(result.returncode)
 
 
 # ─────────────────────────────────────────────

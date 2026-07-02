@@ -307,7 +307,7 @@ class ExecutiveAgent:
                 for w in warnings:
                     lines.append(f"⚠️  {w}")
                 lines.append("")
-            lines.append("✅ CLAUDE.md generated at project root.")
+            lines.append("✅ CLAUDE.md generated inside PLANBOARD/ alongside PRD.md and TRD.md.")
             lines.append("Planning phase complete. You can now begin implementation.")
             return "\n".join(lines)
 

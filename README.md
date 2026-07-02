@@ -39,20 +39,94 @@ Inspired by modern conversational tools like Claude Code and Gemini CLI, PlanBoa
 
 ---
 
-## Quickstart Guide
+## Installation (Global Tool)
 
-### 1. Installation
-Clone the repository and run the bootstrap script:
+PlanBoard is designed to be installed **once** as a global tool and called from **any project directory** — like Claude Code or the GitHub CLI.
+
+### Option 1: Install via `pipx` (Recommended)
+
 ```bash
-git clone https://github.com/your-username/PlanBoard.git
-cd PlanBoard
-./install.sh
+# Install pipx if you don't have it
+pip install --user pipx && pipx ensurepath
+
+# Install PlanBoard globally from GitHub
+pipx install git+https://github.com/Bhavik-Sheth/PlanBoard.git
+
+# Or from a local clone:
+git clone https://github.com/Bhavik-Sheth/PlanBoard.git
+pipx install ./PlanBoard
 ```
 
-### 2. Launch the Application
-Run the TUI:
+### Option 2: Install via `uv tool`
+
 ```bash
-uv run planboard
+# Install PlanBoard globally from GitHub
+uv tool install git+https://github.com/Bhavik-Sheth/PlanBoard.git
+
+# Or from local clone:
+uv tool install ./PlanBoard
+```
+
+### Option 3: One-liner (runs install.sh)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bhavik-Sheth/PlanBoard/main/install.sh | bash
+```
+
+---
+
+## Usage
+
+Once installed, use PlanBoard from **any project directory**:
+
+```bash
+# Navigate to your project
+cd /your/project
+
+# Launch PlanBoard — PLANBOARD/ is auto-created on first run
+planboard
+```
+
+On first launch in a new directory, PlanBoard automatically creates `PLANBOARD/` and walks you through the planning flow.
+
+---
+
+## Upgrading
+
+After you push changes to GitHub, update your global install with a single command:
+
+```bash
+planboard upgrade
+```
+
+This auto-detects whether you installed via `pipx` or `uv tool` and runs the appropriate upgrade. No need to reinstall from scratch.
+
+**Manual alternatives** (if `planboard upgrade` doesn't detect your install method):
+
+```bash
+# pipx
+pipx install git+https://github.com/Bhavik-Sheth/PlanBoard.git --force
+
+# uv tool
+uv tool install git+https://github.com/Bhavik-Sheth/PlanBoard.git --force
+```
+
+---
+
+## Configuring Your API Key
+
+On first launch, run `/config` in the TUI to set your LLM provider and API key:
+
+```
+/config provider groq
+/config apikey groq YOUR_GROQ_API_KEY
+```
+
+Or set environment variables before launching:
+
+```bash
+export GROQ_API_KEY=your_key_here
+planboard
 ```
 
 ---
@@ -67,7 +141,7 @@ Type plain text (no prefix) in the **CHAT INPUT** to chat with the Orchestrator.
 - **Run planning pipeline**: `"generate all drafts"` or `"run pipeline"` invokes the graph to draft PRD/TRD/Schema files.
 - **Document change requests**: Select any file in the File View and type your change (e.g. `"change the database to PostgreSQL in TRD.md"` or `"add a section about unit tests to PRD"`). The agent will regenerate the file incorporating your feedback.
 - **Audit consistency**: `"run consistency audit"` looks for contradictions between documents.
-- **Finalize planning**: `"finalize project"` compiles the `CLAUDE.md` context document at the root.
+- **Finalize planning**: `"finalize project"` compiles the `PLANBOARD/CLAUDE.md` context document.
 
 ---
 

@@ -4,7 +4,8 @@ planboard/tui/widgets/viewer_panel.py
 ViewerPanel — mid-right panel that renders either live agent Markdown output
 or file content (editable/preview) when a file is selected in the directory tree.
 
-Output mode: accumulates raw markdown text and renders it live in the Markdown widget.
+Output mode: accumulates raw markdown text lines and renders a rolling window
+(last _MAX_RENDER_LINES lines) to prevent lag from re-rendering huge buffers.
 File mode: shows markdown files in preview by default; Ctrl+T toggles to editor.
 """
 
@@ -13,6 +14,10 @@ from pathlib import Path
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import TextArea, Markdown, Label
+
+# Maximum number of lines rendered in the markdown widget at once.
+# Older lines are kept in output_buffer for copy but dropped from the render.
+_MAX_RENDER_LINES = 300
 
 
 class ViewerPanel(Vertical):
@@ -31,9 +36,9 @@ class ViewerPanel(Vertical):
         self.is_preview_mode = True
         self.thinking = None
         self.markdown_widget = None
-        # Accumulates raw markdown text for the output panel
-        self._output_md: str = ""
-        # Keep a plain-text buffer for copy support (strips markup)
+        # Rolling list of raw markdown lines for rendering (capped at _MAX_RENDER_LINES)
+        self._output_lines: list[str] = []
+        # Full history buffer for copy support (unlimited, bounded by deque maxlen)
         self.output_buffer: deque[str] = deque(maxlen=500)
 
     def compose(self) -> ComposeResult:
@@ -76,22 +81,40 @@ class ViewerPanel(Vertical):
     # Output mode (agent responses rendered as Markdown)
     # -------------------------------------------------------------------------
 
+    def start_new_command(self) -> None:
+        """
+        Call at the start of a new command to add a visual separator between
+        command outputs and prune old lines so the render stays fast.
+        Kept in output mode; does NOT clear history from output_buffer.
+        """
+        if self._output_lines:
+            # Add a horizontal rule separator between commands
+            separator = "\n---\n"
+            self._output_lines.append(separator)
+            self.output_buffer.append(separator)
+            # Keep only the last _MAX_RENDER_LINES to prevent lag
+            if len(self._output_lines) > _MAX_RENDER_LINES:
+                self._output_lines = self._output_lines[-_MAX_RENDER_LINES:]
+
     def write_output(self, text: str) -> None:
         """
-        Append agent output text and re-render the full accumulated markdown.
+        Append agent output text to the rolling window and re-render.
+        Only the last _MAX_RENDER_LINES lines are rendered to prevent TUI lag
+        from re-parsing an ever-growing markdown string.
         Switches back to output mode if currently viewing a file.
         """
         self.save_current_file()
         self.active_file_path = None
 
-        # Track plain-text buffer for copy
+        # Track full history for copy
         self.output_buffer.append(text)
 
-        # Accumulate raw markdown (text lines separated by newlines)
-        if self._output_md:
-            self._output_md += "\n" + text
-        else:
-            self._output_md = text
+        # Add to rolling render lines
+        self._output_lines.append(text)
+
+        # Enforce rolling window cap
+        if len(self._output_lines) > _MAX_RENDER_LINES:
+            self._output_lines = self._output_lines[-_MAX_RENDER_LINES:]
 
         if self.mode != "output":
             self.mode = "output"
@@ -99,14 +122,14 @@ class ViewerPanel(Vertical):
             self.markdown_widget.display = True
             self.border_subtitle = ""
 
-        # Live-update the rendered markdown
-        self.markdown_widget.update(self._output_md)
+        # Render only the rolling window — this is the performance fix
+        self.markdown_widget.update("\n".join(self._output_lines))
 
     def clear_output(self) -> None:
         """Clear the output buffer and reset the markdown view."""
         self.save_current_file()
         self.output_buffer.clear()
-        self._output_md = ""
+        self._output_lines = []
         self.mode = "output"
         self.active_file_path = None
         self.text_area.display = False

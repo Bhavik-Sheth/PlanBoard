@@ -139,6 +139,7 @@ PLANBOARD_FILES = [
     "ImplementationPlan.md",
     "Tracker.md",
     "Rules.md",
+    "CLAUDE.md",
 ]
 
 DIAGRAM_FILES = [

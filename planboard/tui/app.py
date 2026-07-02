@@ -287,6 +287,11 @@ class PlannerApp(App):
         active_file = self.get_selected_relative_path()
 
         def run_cmd():
+            # Add a separator and prune old lines before each new command.
+            # This is the key TUI lag fix: old content is dropped from the
+            # render window so markdown re-parsing stays fast.
+            self.call_from_thread(self.query_one("#viewer-panel").start_new_command)
+
             parsed_cmd, rendered_output = self.executive.process(cmd, active_file=active_file)
 
             # Print output thread-safely to viewer
