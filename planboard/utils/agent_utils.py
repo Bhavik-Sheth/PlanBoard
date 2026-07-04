@@ -31,6 +31,8 @@ def resolve_relative_path(planboard_path: Path | str, filename: str) -> str | No
 
     # Normalize separators
     filename = filename.replace("\\", "/")
+    if filename.lower().startswith("planboard/"):
+        filename = filename[len("planboard/"):]
     filename_lower = filename.lower()
 
     # 1. Check if the path as given exists directly

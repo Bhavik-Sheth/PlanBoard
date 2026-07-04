@@ -123,3 +123,19 @@ AppFlow.md:
         if content:
             filepath = diagrams_dir / filename
             filepath.write_text(content, encoding="utf-8")
+
+
+def diagram_agent(state) -> "PlannerState":
+    """
+    Standard agent interface for generating architecture diagrams.
+    Does not block on input, generates all diagrams and saves them to ARCHITECTURE_DIAGRAMS/.
+    """
+    from planboard.state import PlannerState
+    if state.phase == "gather":
+        state.pending_questions = []
+        state.status = "drafting"
+    elif state.phase == "write":
+        generate_diagrams(str(state.project_path))
+        state.status = "done"
+        state.phase = "done"
+    return state

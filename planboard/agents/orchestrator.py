@@ -238,6 +238,8 @@ class OrchestratorAgent:
         # Load upstream context
         if target_file in _UPSTREAM_MAP:
             load_context(self.state, *_UPSTREAM_MAP[target_file])
+        elif target_file.startswith("ARCHITECTURE_DIAGRAMS/"):
+            load_context(self.state, "TRD.md", "Schema.md", "AppFlow.md")
 
         # If it's a module, setup module details in context
         if target_file.startswith("MODULES/"):
@@ -431,6 +433,10 @@ class OrchestratorAgent:
         # Also support modules!
         if not agent_name and target.startswith("MODULES/"):
             agent_name = "modules"
+
+        # Also support architecture diagrams!
+        if not agent_name and target.startswith("ARCHITECTURE_DIAGRAMS/"):
+            agent_name = "diagram"
 
         if not agent_name:
             return self._payload(
@@ -1052,7 +1058,7 @@ _AGENT_REGISTRY: dict[str, str] = {
     "rules":          "planboard.agents.rules_agent.rules_agent",
     "implementation": "planboard.agents.implementation_agent.implementation_agent",
     "modules":        "planboard.agents.module_planner_agent.module_planboard_agent",
-    "diagram":        "planboard.agents.architecture_diagram_agent.generate_diagrams",
+    "diagram":        "planboard.agents.architecture_diagram_agent.diagram_agent",
 }
 
 

@@ -93,6 +93,7 @@ IMPORTANT — File targeting for subdirectory files:
 - When the user refers to a diagram file, set target_file to: 
   e.g. "ARCHITECTURE_DIAGRAMS/SystemDesign.md"
 - For top-level planning files, use just the filename: e.g. "PRD.md", "TRD.md"
+- Do NOT include the "PLANBOARD/" root directory prefix in any target_file path. All paths must be relative to the PLANBOARD folder scope.
 
 Here is the context of what currently exists in the workspace:
 - Existing files in PLANBOARD/ (includes MODULES/ and ARCHITECTURE_DIAGRAMS/ subdirectories): {existing_files}
