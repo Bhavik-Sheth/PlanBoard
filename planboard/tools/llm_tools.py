@@ -11,8 +11,18 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, HumanMessage
 from planboard.tools.exceptions import LLMCallError, LLMParseError
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from the project root .env file if it exists
+from pathlib import Path
+
+def find_project_root() -> Path:
+    """Find the project root containing PLANBOARD/ by searching upwards from CWD."""
+    curr = Path.cwd().resolve()
+    for parent in [curr] + list(curr.parents):
+        if (parent / "PLANBOARD").exists() and (parent / "PLANBOARD").is_dir():
+            return parent
+    return curr
+
+load_dotenv(dotenv_path=find_project_root() / ".env", override=True)
 
 # Registry of supported providers
 PROVIDER_MAP: dict[str, dict[str, Any]] = {
@@ -215,7 +225,7 @@ def update_env_variable(key: str, value: str) -> None:
     from pathlib import Path
     
     os.environ[key] = value
-    env_path = Path.cwd() / ".env"
+    env_path = find_project_root() / ".env"
     
     lines = []
     updated = False

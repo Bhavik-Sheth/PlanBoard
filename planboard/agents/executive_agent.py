@@ -168,47 +168,50 @@ class ExecutiveAgent:
         ptype = payload.get("type", "")
 
         if ptype == "ready":
-            return f"✅ {payload.get('message', 'Ready.')}"
+            return f"I'm ready! {payload.get('message', 'How can I help you plan your project today?')}"
 
         elif ptype == "prompt":
             return payload.get("text", "")
 
         elif ptype == "ready_to_run":
             return (
-                "✅ StructuredIdea.md generated.\n"
-                "Type /run to start the planning pipeline."
+                "I've successfully structured your project idea into **StructuredIdea.md**!\n"
+                "We are ready to begin the full planning pipeline. Let me know when you'd like to start, or type `/run`."
             )
 
         elif ptype == "file_complete":
             file = payload.get("file", "?")
             agent = payload.get("agent", "?")
             summary = payload.get("summary", [])
-            lines = [f"✅ {file} written by {agent}.", "", "Key decisions:"]
+            lines = [
+                f"I have successfully drafted **{file}** for you! Here are the key highlights and decisions I've made:",
+                ""
+            ]
             for bullet in summary:
-                lines.append(f"  • {bullet}")
+                lines.append(f"• {bullet}")
             lines.append("")
-            lines.append(f"Type /approve {file} to accept, or describe changes to revise it.")
+            lines.append("Does this look good to you, or would you like to make any adjustments? You can type your suggestions or approve it to proceed.")
             return "\n".join(lines)
 
         elif ptype == "file_approved":
             file = payload.get("file", "?")
             next_file = payload.get("next_file")
             if next_file:
-                return f"✅ {file} approved. Moving to {next_file}..."
-            return f"✅ {file} approved. All files complete!"
+                return f"Awesome! **{file}** has been approved. Moving on to drafting **{next_file}** next..."
+            return f"Fantastic! **{file}** is approved, and all our planning files are now complete!"
 
         elif ptype == "question":
             source = payload.get("source_agent", "Agent")
             text = payload.get("text", "?")
             reason = payload.get("reason", "")
             lines = [
-                f"❓ [{source} needs info]",
-                f"   {text}",
+                f"I need a bit more clarification to build the best plan for you:",
+                f"> **Question:** {text}",
             ]
             if reason:
-                lines.append(f"   (Reason: {reason})")
+                lines.append(f"*(Reason: {reason})*")
             lines.append("")
-            lines.append('Type your answer, or type "I don\'t know" to get a suggestion.')
+            lines.append('Please type your answer below. If you\'re not sure, just type "I don\'t know" and I\'ll suggest a recommendation.')
             self.exec_state["waiting_for"] = "question_answer"
             return "\n".join(lines)
 
@@ -218,14 +221,15 @@ class ExecutiveAgent:
             tradeoff = payload.get("tradeoff", "")
             alt = payload.get("alternative", "")
             lines = [
-                f"💡 Suggestion: {tool}",
-                f"   Why: {why}",
-                f"   Trade-off: {tradeoff}",
+                "Based on your requirements, here is my suggestion:",
+                f"• **Recommendation**: {tool}",
+                f"• **Why**: {why}",
+                f"• **Trade-off**: {tradeoff}",
             ]
             if alt:
-                lines.append(f"   Alternative if rejected: {alt}")
+                lines.append(f"• **Alternative**: {alt}")
             lines.append("")
-            lines.append("Accept this suggestion? [yes / no]")
+            lines.append("Would you like to accept this recommendation? (Please type **yes** or **no**)")
             self.exec_state["waiting_for"] = "suggestion_confirm"
             return "\n".join(lines)
 
@@ -233,9 +237,10 @@ class ExecutiveAgent:
             agent = payload.get("agent", "?")
             message = payload.get("message", "Unknown error")
             lines = [
-                f"⚠️  Error in {agent}: {message}",
+                f"I ran into an issue while running the **{agent}** agent:",
+                f"> {message}",
                 "",
-                "Retry this agent? [yes / no]",
+                "Would you like me to retry running this agent? (Please type **yes** or **no**)",
             ]
             self.exec_state["waiting_for"] = "retry_confirm"
             return "\n".join(lines)
@@ -297,19 +302,19 @@ class ExecutiveAgent:
             lines = []
             if warnings:
                 for w in warnings:
-                    lines.append(f"⚠️  {w}")
+                    lines.append(f"⚠️ {w}")
                 lines.append("")
-            lines.append("✅ CLAUDE.md generated inside PLANBOARD/ alongside PRD.md and TRD.md.")
-            lines.append("Planning phase complete. You can now begin implementation.")
+            lines.append("🎉 Success! **CLAUDE.md** has been compiled inside **PLANBOARD/** alongside your other requirements.")
+            lines.append("The planning phase is now complete, and your project context is locked in. You are ready to start coding!")
             return "\n".join(lines)
 
         elif ptype == "finalize_warning":
             incomplete = payload.get("incomplete", [])
-            lines = ["⚠️  Some files are not yet complete:"]
+            lines = ["It looks like a few planning files are not yet complete:"]
             for f in incomplete:
-                lines.append(f"  - {f}")
+                lines.append(f"  • {f}")
             lines.append("")
-            lines.append("Proceed with finalization anyway? [yes / no]")
+            lines.append("Would you like to proceed with finalizing the plan anyway? (Please type **yes** or **no**)")
             self.exec_state["waiting_for"] = "finalize_confirm"
             return "\n".join(lines)
 
@@ -326,8 +331,8 @@ class ExecutiveAgent:
 
         elif ptype == "sequence_complete":
             return (
-                "✅ All planning files are complete!\n"
-                "Run /finalize to generate CLAUDE.md."
+                "All planning files are complete and approved! 🚀\n"
+                "We are ready to finalize and compile **CLAUDE.md**. Shall we go ahead and finalize? You can type `/finalize` or let me know."
             )
 
         elif ptype == "update_complete":
@@ -575,7 +580,13 @@ class ExecutiveAgent:
             if not target:
                 action_rendered = prefix + "\n\n> ⚠️ Could not determine which file to update. Use `/update <description>` or mention the file name."
                 cmd = None
+            elif target in self.state.approved_files:
+                # Target is already approved — route through updates analysis to recalculate blast radius
+                if target.lower() not in change_text.lower():
+                    change_text = f"In {target}: {change_text}"
+                cmd = {"command": "update", "text": change_text}
             else:
+                # Target is active/unapproved — route to revise directly
                 cmd = {"command": "revise", "target": target, "request": change_text}
 
         else:

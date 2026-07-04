@@ -79,6 +79,7 @@ PLANBOARD/ Directory Structure:
   (SystemDesign.md, SystemArchitecture.md, FolderStructure.md, DataFlow.md)
 
 IMPORTANT — File targeting for subdirectory files:
+- Users may tag/mention files using the "@" prefix (e.g. "@PRD.md" or "@TRD.md" or "@Auth"). When resolving target_file, strip the "@" prefix.
 - Resolve fuzzy/loose references to filenames mentioned by the user to their actual file paths from the list of existing files. For example:
   - "architecture diagram", "arch diagram", or "system architecture" -> "ARCHITECTURE_DIAGRAMS/SystemArchitecture.md" or "ARCHITECTURE_DIAGRAMS/SystemDesign.md"
   - "prd" or "product requirements" -> "PRD.md"

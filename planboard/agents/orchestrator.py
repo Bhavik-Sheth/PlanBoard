@@ -787,10 +787,10 @@ class OrchestratorAgent:
             )
 
         warning = (
-            f"**Change detected:** {what_changed}"
-            f"{conflict_note}\n\n"
-            f"**Files that need updating:**\n{affected_lines}\n\n"
-            "Proceed? [yes / no]"
+            f"I've analyzed your change request: *\"{what_changed}\"*\n"
+            f"{conflict_note}\n"
+            f"Here is the list of documents that need to be updated:\n{affected_lines}\n\n"
+            "Would you like to proceed with this update plan? (Please type **yes** or **no**)"
         )
 
         return self._payload(

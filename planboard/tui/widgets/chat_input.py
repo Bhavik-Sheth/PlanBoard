@@ -27,10 +27,6 @@ class ChatInput(TextArea):
 
     async def _on_key(self, event) -> None:
         """Intercept keys to navigate and complete autocomplete suggestions if open."""
-        # 1. Allow Tab and Shift+Tab to switch focus between panels
-        if event.key in ("tab", "shift+tab"):
-            return
-
         try:
             autocomplete = self.app.query_one("#autocomplete-list")
         except Exception:
@@ -55,7 +51,14 @@ class ChatInput(TextArea):
                 elif idx is None and autocomplete.current_options:
                     autocomplete.highlighted = 0
                 return
-            elif event.key in ("enter", "tab"):
+            elif event.key == "tab":
+                idx = autocomplete.highlighted if autocomplete.highlighted is not None else 0
+                if idx is not None and 0 <= idx < len(autocomplete.current_options):
+                    event.prevent_default()
+                    event.stop()
+                    self.complete_option(autocomplete, autocomplete.current_options[idx])
+                    return
+            elif event.key == "enter":
                 idx = autocomplete.highlighted
                 if idx is not None and 0 <= idx < len(autocomplete.current_options):
                     event.prevent_default()
@@ -67,6 +70,10 @@ class ChatInput(TextArea):
                 event.stop()
                 autocomplete.hide()
                 return
+
+        # 1. Allow Tab and Shift+Tab to switch focus between panels when autocomplete is NOT open
+        if event.key in ("tab", "shift+tab"):
+            return
 
         # 2. If autocomplete is not open, handle Enter (submit) vs newlines
         if event.key == "enter":

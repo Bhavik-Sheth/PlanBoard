@@ -78,14 +78,19 @@ class PlannerApp(App):
 
     def on_mount(self) -> None:
         # Set panel titles
-        self.query_one("#file-tree").border_title = "FILE VIEW"
-        self.query_one("#architecture-panel").border_title = "ARCHITECTURE PANEL"
-        self.query_one("#architecture-panel").border_subtitle = "Ctrl+E or F2 to Maximize"
-        self.query_one("#viewer-panel").border_title = "RESPONSE / VIEWER PANEL"
-        self.query_one("#chat-input").border_title = "CHAT INPUT"
+        self.viewer = self.query_one("#viewer-panel")
+        self.file_tree = self.query_one("#file-tree")
+        self.architecture_panel = self.query_one("#architecture-panel")
+        self.chat_input = self.query_one("#chat-input")
+
+        self.file_tree.border_title = "FILE VIEW"
+        self.architecture_panel.border_title = "ARCHITECTURE PANEL"
+        self.architecture_panel.border_subtitle = "Ctrl+E or F2 to Maximize"
+        self.viewer.border_title = "RESPONSE / VIEWER PANEL"
+        self.chat_input.border_title = "CHAT INPUT"
 
         # Auto-focus the chat input on launch
-        self.query_one("#chat-input").focus()
+        self.chat_input.focus()
 
         # Instantiate ExecutiveAgent
         from planboard.agents.executive_agent import ExecutiveAgent
@@ -98,7 +103,10 @@ class PlannerApp(App):
         
         def startup_worker():
             rendered = self.executive.handle_startup()
-            self.call_from_thread(viewer.write_output, rendered)
+            self.call_from_thread(
+                viewer.write_output,
+                f"🤖 **PlanBoard:**\n{rendered}\n"
+            )
 
         if not self._is_test:
             self.run_in_background(startup_worker)
@@ -277,8 +285,7 @@ class PlannerApp(App):
         # 1. If we are waiting for grilling/confirmation input (legacy/fallback)
         if self._input_event.is_set():
             self._input_event.clear()
-            viewer = self.query_one("#viewer-panel")
-            viewer.write_output(f"> **Answer:** {cmd}")
+            self.viewer.write_output(f"👤 **You:** {cmd}\n")
             self.input_queue.put(cmd)
             return
 
@@ -290,12 +297,21 @@ class PlannerApp(App):
             # Add a separator and prune old lines before each new command.
             # This is the key TUI lag fix: old content is dropped from the
             # render window so markdown re-parsing stays fast.
-            self.call_from_thread(self.query_one("#viewer-panel").start_new_command)
+            self.call_from_thread(self.viewer.start_new_command)
+
+            # Print user message to viewer immediately
+            self.call_from_thread(
+                self.viewer.write_output,
+                f"👤 **You:** {cmd}\n"
+            )
 
             parsed_cmd, rendered_output = self.executive.process(cmd, active_file=active_file)
 
-            # Print output thread-safely to viewer
-            self.call_from_thread(self.query_one("#viewer-panel").write_output, rendered_output)
+            # Print assistant response thread-safely to viewer
+            self.call_from_thread(
+                self.viewer.write_output,
+                f"🤖 **PlanBoard:**\n{rendered_output}\n"
+            )
 
             # Reload UI tree/diagram after any command that creates or modifies files
             if parsed_cmd:
@@ -305,8 +321,8 @@ class PlannerApp(App):
                     "edit", "approve", "revise", "module_add", "update_confirmed",
                 }
                 if cmd_type in file_writing_cmds:
-                    self.call_from_thread(self.query_one("#file-tree").reload)
+                    self.call_from_thread(self.file_tree.reload)
                 if cmd_type in ("diagram",):
-                    self.call_from_thread(self.query_one("#architecture-panel").refresh_diagram)
+                    self.call_from_thread(self.architecture_panel.refresh_diagram)
 
         self.run_in_background(run_cmd)

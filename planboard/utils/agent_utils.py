@@ -26,6 +26,9 @@ def resolve_relative_path(planboard_path: Path | str, filename: str) -> str | No
     if not filename:
         return None
 
+    if filename.startswith("@"):
+        filename = filename[1:]
+
     # Normalize separators
     filename = filename.replace("\\", "/")
     filename_lower = filename.lower()
