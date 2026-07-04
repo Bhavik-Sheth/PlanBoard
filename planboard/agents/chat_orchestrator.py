@@ -79,6 +79,14 @@ PLANBOARD/ Directory Structure:
   (SystemDesign.md, SystemArchitecture.md, FolderStructure.md, DataFlow.md)
 
 IMPORTANT — File targeting for subdirectory files:
+- Resolve fuzzy/loose references to filenames mentioned by the user to their actual file paths from the list of existing files. For example:
+  - "architecture diagram", "arch diagram", or "system architecture" -> "ARCHITECTURE_DIAGRAMS/SystemArchitecture.md" or "ARCHITECTURE_DIAGRAMS/SystemDesign.md"
+  - "prd" or "product requirements" -> "PRD.md"
+  - "trd" or "technical design" -> "TRD.md"
+  - "database schema" or "schema" -> "Schema.md"
+  - "constraints" or "limitations" -> "Constraints.md"
+  - "app flow" or "screens" -> "AppFlow.md"
+  - "auth spec", "auth module" -> "MODULES/Auth.md" (if Auth is a module)
 - When the user refers to a module file, set target_file to the FULL relative path including the subdirectory:
   e.g. "MODULES/Auth.md", "MODULES/Database.md"
 - When the user refers to a diagram file, set target_file to: 

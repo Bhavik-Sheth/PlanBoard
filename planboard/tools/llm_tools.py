@@ -55,11 +55,11 @@ PROVIDER_MAP: dict[str, dict[str, Any]] = {
 
 def get_llm_client(**kwargs: Any) -> BaseChatModel:
     """
-    Reads provider config from environment and instantiates the correct LangChain chat client.
+    Reads provider config from environment (or arguments) and instantiates the correct LangChain chat client.
     Supported: groq, openai, anthropic, nvidia, ollama, together, mistral.
     """
-    provider = os.getenv("ACTIVE_PROVIDER") or os.getenv("PROVIDER")
-    model = os.getenv("ACTIVE_MODEL") or os.getenv("MODEL")
+    provider = kwargs.pop("provider", None) or os.getenv("ACTIVE_PROVIDER") or os.getenv("PROVIDER")
+    model = kwargs.pop("model", None) or os.getenv("ACTIVE_MODEL") or os.getenv("MODEL")
     
     if not provider:
         raise LLMCallError("No LLM provider specified. Set ACTIVE_PROVIDER or PROVIDER in your environment.")

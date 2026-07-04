@@ -1051,7 +1051,7 @@ _AGENT_REGISTRY: dict[str, str] = {
     "appflow":        "planboard.agents.appflow_agent.appflow_agent",
     "rules":          "planboard.agents.rules_agent.rules_agent",
     "implementation": "planboard.agents.implementation_agent.implementation_agent",
-    "modules":        "planboard.agents.module_planboard_agent.module_planboard_agent",
+    "modules":        "planboard.agents.module_planner_agent.module_planboard_agent",
     "diagram":        "planboard.agents.architecture_diagram_agent.generate_diagrams",
 }
 

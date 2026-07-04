@@ -154,15 +154,7 @@ class ExecutiveAgent:
                 return {"command": None, "_error": f"Unknown command: {name}. Type /help for available commands."}
 
         # ── Plain text ─────────────────────────────────────────────
-        # If there's an active revision target, treat as revision request
-        if self.state.active_revision_target:
-            return {
-                "command": "revise",
-                "target": self.state.active_revision_target,
-                "request": raw,
-            }
-
-        # Otherwise, route through chat_orchestrator for intent classification
+        # Route through chat_orchestrator for intent classification
         # so the user can speak naturally and still trigger real pipeline actions.
         return {"command": "_chat_classify", "text": raw}
 
@@ -464,7 +456,17 @@ class ExecutiveAgent:
 
         # Route to Orchestrator
         payload = self.orchestrator.dispatch(parsed)
-        rendered = self.render_payload(payload)
+        
+        # Auto-advance sequence if a file was approved and there is a next file
+        if payload.get("type") == "file_approved" and payload.get("next_file"):
+            run_payload = self.orchestrator.dispatch({"command": "run"})
+            approval_msg = self.render_payload(payload)
+            run_msg = self.render_payload(run_payload)
+            rendered = f"{approval_msg}\n\n{run_msg}"
+            payload = run_payload
+        else:
+            rendered = self.render_payload(payload)
+            
         self.exec_state["last_display"] = rendered
 
         # Keep chat history updated for slash commands too
@@ -583,7 +585,15 @@ class ExecutiveAgent:
         # If we have a real command to dispatch, do it
         if cmd is not None:
             payload = self.orchestrator.dispatch(cmd)
-            pipeline_rendered = self.render_payload(payload)
+            
+            # Auto-advance sequence if a file was approved and there is a next file
+            if payload.get("type") == "file_approved" and payload.get("next_file"):
+                run_payload = self.orchestrator.dispatch({"command": "run"})
+                pipeline_rendered = f"{self.render_payload(payload)}\n\n{self.render_payload(run_payload)}"
+                payload = run_payload
+            else:
+                pipeline_rendered = self.render_payload(payload)
+                
             if prefix:
                 rendered = f"{prefix}\n\n{pipeline_rendered}"
             else:
@@ -803,7 +813,6 @@ class ExecutiveAgent:
             else:
                 # Cancel: clear the stored plan
                 self.orchestrator.state.active_update_plan = None
-                from planboard.state import save_state
                 save_state(self.orchestrator.state)
                 return None, "Update cancelled."
 

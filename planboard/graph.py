@@ -32,7 +32,7 @@ from planboard.agents.rules_agent import rules_agent
 from planboard.agents.implementation_agent import implementation_agent
 from planboard.agents.griller_agent import griller_agent
 from planboard.agents.tech_stack_agent import tech_stack_agent
-from planboard.agents.module_planboard_agent import module_planboard_agent
+from planboard.agents.module_planner_agent import module_planboard_agent
 
 # --------------------------------------------------------------------------- #
 # Routing functions (read state, return next node name)
