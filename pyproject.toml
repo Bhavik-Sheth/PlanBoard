@@ -37,7 +37,10 @@ planboard = "planboard.main:app"
 [tool.uv]
 package = true
 
-[tool.setuptools]
-packages = ["planboard"]
+[tool.setuptools.packages]
+find = {}
+
+[tool.setuptools.package-data]
+planboard = ["**/*.css"]
 
 
