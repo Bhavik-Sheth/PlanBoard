@@ -47,10 +47,27 @@ On first launch, run `/config` in the terminal chat input to configure your LLM 
 /config apikey groq YOUR_GROQ_API_KEY
 ```
 
+For Gemini models, configure it using:
+```
+/config provider gemini
+/config apikey gemini YOUR_GOOGLE_API_KEY
+```
+
+For custom/open-source models (e.g. DeepSeek, Minimax) via an OpenAI-compatible endpoint:
+```
+/config provider openai-compatible
+/config baseurl https://api.deepseek.com/v1
+/config apikey openai-compatible YOUR_API_KEY
+/config model deepseek-chat
+```
+
 Alternatively, you can set environment variables before launching PlanBoard:
 
 ```bash
 export GROQ_API_KEY=your_key_here
+export GOOGLE_API_KEY=your_gemini_key_here
+export OPENAI_COMPATIBLE_API_KEY=your_custom_key_here
+export OPENAI_COMPATIBLE_API_BASE=https://api.deepseek.com/v1
 planboard
 ```
 
@@ -86,9 +103,10 @@ You can use the following slash commands in the chat input to trigger actions di
 - `/consistency` - Run a read-only document consistency check.
 - `/finalize` - Compile the finalized `CLAUDE.md`.
 - `/config` - Show current active provider, model, and API keys.
-- `/config provider <groq|openai|anthropic|nvidia>` - Set active provider.
+- `/config provider <groq|openai|anthropic|nvidia|gemini|openai-compatible>` - Set active provider.
 - `/config model <model_name>` - Set active model.
 - `/config apikey <provider> <key>` - Write API key to `.env`.
+- `/config baseurl <url>` - Set base URL for openai-compatible provider.
 - `/abort` - Abort active confirmation prompt or interactive query.
 
 ---

@@ -633,31 +633,36 @@ class ExecutiveAgent:
             list_providers,
             PROVIDER_REGISTRY
         )
+        from planboard.tools.llm_tools import update_env_variable
         import importlib
+        import os
         
         arg = arg.strip()
         if not arg:
             provider = get_active_provider()
             model = get_active_model()
             keys_status = get_api_key_status()
+            base_url = os.getenv("OPENAI_COMPATIBLE_API_BASE") or os.getenv("OPENAI_COMPATIBLE_BASE_URL") or "None"
             
             lines = [
                 "Current LLM Configuration:",
                 f"  Active Provider: {provider or 'None'}",
                 f"  Active Model:    {model or 'None'}",
+                f"  Base URL (OpenAI-compatible): {base_url}",
                 "",
                 "API Keys Status:"
             ]
             for p, is_set in keys_status.items():
                 status_icon = "set" if is_set else "missing"
-                lines.append(f"  {p:<12}: {status_icon}")
+                lines.append(f"  {p:<18}: {status_icon}")
             
             lines.extend([
                 "",
                 "Usage:",
                 "  /config provider <name>   - Set the active LLM provider",
                 "  /config model <name>      - Set the active LLM model",
-                "  /config apikey <provider> <key> - Set the API key for a provider"
+                "  /config apikey <provider> <key> - Set the API key for a provider",
+                "  /config baseurl <url>     - Set the API base URL (for openai-compatible provider)"
             ])
             return "\n".join(lines)
 
@@ -706,8 +711,17 @@ class ExecutiveAgent:
                 return f"✅ API key for provider '{subarg1}' successfully saved to .env"
             except Exception as e:
                 return f"Error saving API key: {e}"
+                
+        elif subcmd == "baseurl":
+            if not subarg1:
+                return "Usage: /config baseurl <url>"
+            try:
+                update_env_variable("OPENAI_COMPATIBLE_API_BASE", subarg1)
+                return f"✅ OpenAI-compatible base URL set to: {subarg1}"
+            except Exception as e:
+                return f"Error saving base URL: {e}"
         else:
-            return f"Unknown config subcommand: {subcmd}. Use provider, model, or apikey."
+            return f"Unknown config subcommand: {subcmd}. Use provider, model, apikey, or baseurl."
 
     def _handle_waiting_response(self, raw: str) -> tuple[Optional[dict], str]:
         """Handle user response when we're waiting for confirmation/answer."""

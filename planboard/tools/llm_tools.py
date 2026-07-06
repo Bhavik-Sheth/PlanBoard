@@ -51,22 +51,22 @@ PROVIDER_MAP: dict[str, dict[str, Any]] = {
         "import_path": "langchain_community.chat_models",
         "class_name": "ChatOllama",
     },
-    "together": {
-        "env_key": "TOGETHER_API_KEY",
-        "import_path": "langchain_together",
-        "class_name": "ChatTogether",
+    "gemini": {
+        "env_key": "GOOGLE_API_KEY",
+        "import_path": "langchain_google_genai",
+        "class_name": "ChatGoogleGenerativeAI",
     },
-    "mistral": {
-        "env_key": "MISTRAL_API_KEY",
-        "import_path": "langchain_mistralai",
-        "class_name": "ChatMistralAI",
+    "openai-compatible": {
+        "env_key": "OPENAI_COMPATIBLE_API_KEY",
+        "import_path": "langchain_openai",
+        "class_name": "ChatOpenAI",
     }
 }
 
 def get_llm_client(**kwargs: Any) -> BaseChatModel:
     """
     Reads provider config from environment (or arguments) and instantiates the correct LangChain chat client.
-    Supported: groq, openai, anthropic, nvidia, ollama, together, mistral.
+    Supported: groq, openai, anthropic, nvidia, ollama, gemini, openai-compatible.
     """
     provider = kwargs.pop("provider", None) or os.getenv("ACTIVE_PROVIDER") or os.getenv("PROVIDER")
     model = kwargs.pop("model", None) or os.getenv("ACTIVE_MODEL") or os.getenv("MODEL")
@@ -97,19 +97,13 @@ def get_llm_client(**kwargs: Any) -> BaseChatModel:
         module = importlib.import_module(import_path)
         chat_class = getattr(module, class_name)
     except ImportError:
-        # Fallback for ollama / together community imports if needed
+        # Fallback for ollama community imports if needed
         if provider == "ollama":
             try:
                 module = importlib.import_module("langchain_ollama")
                 chat_class = getattr(module, "ChatOllama")
             except ImportError:
                 raise LLMCallError("Provider 'ollama' requires the 'langchain-community' or 'langchain-ollama' package.")
-        elif provider == "together":
-            try:
-                module = importlib.import_module("langchain_community.chat_models")
-                chat_class = getattr(module, "ChatTogether")
-            except ImportError:
-                raise LLMCallError("Provider 'together' requires the 'langchain-together' or 'langchain-community' package.")
         else:
             raise LLMCallError(f"Provider '{provider}' requires package '{import_path}'. Please install it.")
     except AttributeError:
@@ -118,10 +112,22 @@ def get_llm_client(**kwargs: Any) -> BaseChatModel:
     # Build initialization kwargs
     init_kwargs = {**kwargs}
     if entry["env_key"] and api_key:
-        # Some libraries take api_key as a keyword, others use their specific env keys internally.
-        # But we can also set the argument directly.
-        arg_name = entry["env_key"].lower()
-        init_kwargs[arg_name] = api_key
+        if provider == "openai-compatible":
+            init_kwargs["api_key"] = api_key
+            init_kwargs["openai_api_key"] = api_key
+        else:
+            arg_name = entry["env_key"].lower()
+            init_kwargs[arg_name] = api_key
+            
+    if provider == "openai-compatible":
+        base_url = os.getenv("OPENAI_COMPATIBLE_API_BASE") or os.getenv("OPENAI_COMPATIBLE_BASE_URL")
+        if not base_url:
+            raise LLMCallError(
+                "Base URL for provider 'openai-compatible' (OPENAI_COMPATIBLE_API_BASE) is missing. "
+                "Configure it via: /config baseurl <url>"
+            )
+        init_kwargs["openai_api_base"] = base_url
+        init_kwargs["base_url"] = base_url
         
     if model:
         init_kwargs["model"] = model.strip()

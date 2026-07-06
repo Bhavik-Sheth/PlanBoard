@@ -63,7 +63,7 @@ PlanBoard coordinates **16 agents total** using a hub-and-spoke multi-agent arch
 ## Features
 * **Slash-Command Driven UX:** Use a Claude Code-style interactive command interface typed directly into the chat input.
 * **Keyboard-First TUI:** A terminal user interface optimized for speed and keyboard navigation; mouse interactions are optional and never required.
-* **Provider-Agnostic LLM Layer:** Choose your preferred model provider, including Groq, NVIDIA NIM, or any LangChain-compatible API.
+* **Provider-Agnostic LLM Layer:** Choose your preferred model provider, including Gemini, Groq, Anthropic, OpenAI, NVIDIA NIM, or any custom OpenAI-compatible API endpoint.
 * **ASCII Architecture Diagrams:** Automatic visual rendering of layouts and system networks (powered by PHART and NetworkX) directly in the terminal without requiring external image viewers.
 * **Blast-Radius Updates:** Modifying a requirement mid-session recalculates dependencies and only runs updates on affected files, minimizing LLM token consumption.
 
