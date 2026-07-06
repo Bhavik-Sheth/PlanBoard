@@ -1,190 +1,81 @@
-# PlanBoard
+# PlanBoard (PlannerX)
 
-PlanBoard is an AI-driven terminal project planboard application designed to draft, refine, and structure product requirements (PRD), technical architecture documents (TRD), schemas, app flows, and coding rules in a single terminal interface (TUI).
+AI-assisted "vibe coding" skips planning — no PRD, no schema, and no decision trail. Manual documentation (like Notion or Google Docs) drifts out of sync fast, while single-shot AI generation lacks a persistent structure or approval process. PlanBoard solves this by bringing automated, structured planning to your terminal, bridging the gap between raw ideas and code.
 
-Inspired by modern conversational tools like Claude Code and Gemini CLI, PlanBoard provides a single conversational orchestrator agent that interprets your natural language messages, answers questions, manages the planning lifecycle, and automatically triggers specialist agents to write or refine documents.
+## What PlanBoard Is
+PlanBoard is a terminal-native, multi-agent planning tool designed to construct a complete, structured project specification before a single line of code is written. 
 
----
+* **Input:** A raw idea, or a structured Problem Statement + proposed solution.
+* **Output:** A comprehensive project spec, including a Product Requirement Document (PRD), Technical Requirement Document (TRD), Schema, Rules, Design Decisions, App Flow, and live ASCII architecture diagrams.
+* **Core Design:** Instead of relying on a single LLM to generate everything in one shot, PlanBoard orchestrates specialized agents that each own exactly one document. They ask clarifying questions when needed and require your explicit approval before moving on to the next file, ensuring every document is accurate, consistent, and traceable to a decision.
 
-## Key Features
+### Getting Started
 
-1. **Central Agent Chat Interface**: Chat with a single orchestration agent that resolves your intentions (e.g. initializing, running the pipeline, approving, or making changes to docs).
-2. **Interactive TUI Wireframe**: A full-screen Terminal UI built with Textual:
-   - **FILE VIEW (Blue)**: Shows active `PLANBOARD/` file structure with reactive updates.
-   - **ARCHITECTURE PANEL (Green)**: Renders live-refreshing syntax-highlighted Mermaid diagrams.
-   - **VIEWER PANEL (White)**: Displays dynamic log streams and formatted markdown documents.
-   - **CHAT INPUT (Orange)**: Default focused prompt for natural conversations and slash commands.
-3. **Decoupled Architecture Diagram Watcher**: Standalone process that monitors document changes and automatically regenerates mermaid diagrams.
-4. **Interactive Grilling & Suggestions**: Specialist agents consult you with clarification questions or suggest optimal technology stacks which you can approve or customize.
-5. **Configurable Settings via TUI**: Easily switch LLM providers (Groq, OpenAI, Anthropic, Nvidia), specify models, and save API keys directly from the TUI.
-
----
-
-## Layout Wireframe
-
-```
-┌──────────────┬─────────────────────────────────────────────┐
-│              │  ARCHITECTURE PANEL (Green)                 │
-│  FILE VIEW   │  - Syntax-highlighted active .mmd diagram   │
-│  (Blue)      ├─────────────────────────────────────────────┤
-│              │  RESPONSE / VIEWER PANEL (White)            │
-│  PLANBOARD/    │  - Agent logs & streaming stdout/stderr     │
-│  ├ RawIdea   │  - Markdown rendering of selected files     │
-│  ├ PRD.md    │                                             │
-│  ├ ...       │                                             │
-│  └ MODULES/  ├─────────────────────────────────────────────┤
-│              │  CHAT INPUT (Orange) — prompt line          │
-└──────────────┴─────────────────────────────────────────────┘
-```
-
----
-
-## Installation (Global Tool)
-
-PlanBoard is designed to be installed **once** as a global tool and called from **any project directory** — like Claude Code or the GitHub CLI.
-
-### Option 1: Install via `pipx` (Recommended)
+To install PlanBoard globally:
 
 ```bash
-# Install pipx if you don't have it
-pip install --user pipx && pipx ensurepath
-
-# Install PlanBoard globally from GitHub
+# Via pipx (recommended)
 pipx install git+https://github.com/Bhavik-Sheth/PlanBoard.git
 
-# Or from a local clone:
-git clone https://github.com/Bhavik-Sheth/PlanBoard.git
-pipx install ./PlanBoard
-```
-
-### Option 2: Install via `uv tool`
-
-```bash
-# Install PlanBoard globally from GitHub
+# Via uv tool
 uv tool install git+https://github.com/Bhavik-Sheth/PlanBoard.git
-
-# Or from local clone:
-uv tool install ./PlanBoard
 ```
 
-### Option 3: One-liner (runs install.sh)
+To launch PlanBoard, navigate to any project folder and run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Bhavik-Sheth/PlanBoard/main/install.sh | bash
-```
-
----
-
-## Usage
-
-Once installed, use PlanBoard from **any project directory**:
-
-```bash
-# Navigate to your project
-cd /your/project
-
-# Launch PlanBoard — PLANBOARD/ is auto-created on first run
 planboard
 ```
 
-On first launch in a new directory, PlanBoard automatically creates `PLANBOARD/` and walks you through the planning flow.
+For detailed guides, provider configurations, and a complete command reference, see the [User Manual](UserManual.md).
 
----
+## Agents + Workflow
+PlanBoard coordinates **16 agents total** using a hub-and-spoke multi-agent architecture.
 
-## Upgrading
+### Agent Roles
+* **Orchestrator:** A pure router that manages execution flow, with no direct user-facing input/output.
+* **Executive Agent:** The primary interface and the only agent you talk to directly.
+* **Specialist Agents:** Each agent owns and drafts exactly one markdown specification file:
+  * **PRD Agent** (Product Requirement Document)
+  * **TRD Agent** (Technical Requirement Document)
+  * **Schema Agent** (Database and data schemas)
+  * **Design Decisions Agent** (Decisions, tradeoffs, and rationale)
+  * **App Flow Agent** (User journeys and screen navigation)
+  * **Rules Agent** (Code quality and architecture guidelines)
+  * **Implementation Plan Agent** (Step-by-step development roadmap)
+  * **Modules Agent** (Codebase directory structure and file maps)
+* **Support Agents:**
+  * **Griller:** Interrogates your assumptions, asking clarifying questions one at a time.
+  * **Tech Stack Expert:** Recommends tools, frameworks, and stacks with detailed tradeoff analyses when you are undecided.
+  * **Consistency Agent:** Verifies that all drafted documents agree with one another.
+  * **Finalizer Agent:** Compiles all approved specifications into a single, execution-ready `CLAUDE.md` context.
+  * **Updates Agent:** Propagates adjustments only to affected files rather than triggering a full documentation rebuild.
+* **Background Watcher:** A daemon process that regenerates ASCII architecture diagrams live in the background as planning files change.
 
-After you push changes to GitHub, update your global install with a single command:
+### Step-by-Step Workflow
+1. **Launch:** Run `planboard` in your target project directory.
+2. **Describe:** Input your raw idea or a Problem Statement + proposed solution to the Executive Agent.
+3. **Draft:** Specialist agents draft each file in sequence.
+4. **Approve / Iterate:** Review the drafts, requesting changes or approving each file before proceeding.
+5. **Verify:** Run `/consistency` to check cross-file agreement.
+6. **Compile:** Run `/finalize` to compile the final `CLAUDE.md` execution context.
 
-```bash
-planboard upgrade
-```
+## Features
+* **Slash-Command Driven UX:** Use a Claude Code-style interactive command interface typed directly into the chat input.
+* **Keyboard-First TUI:** A terminal user interface optimized for speed and keyboard navigation; mouse interactions are optional and never required.
+* **Provider-Agnostic LLM Layer:** Choose your preferred model provider, including Groq, NVIDIA NIM, or any LangChain-compatible API.
+* **ASCII Architecture Diagrams:** Automatic visual rendering of layouts and system networks (powered by PHART and NetworkX) directly in the terminal without requiring external image viewers.
+* **Blast-Radius Updates:** Modifying a requirement mid-session recalculates dependencies and only runs updates on affected files, minimizing LLM token consumption.
 
-This auto-detects whether you installed via `pipx` or `uv tool` and runs the appropriate upgrade. No need to reinstall from scratch.
+## Tech Stack
+* **Language:** Python
+* **Agentic Framework:** LangGraph, LangChain
+* **TUI & CLI:** Textual, Typer
+* **Layouts & Visuals:** PHART, NetworkX
 
-**Manual alternatives** (if `planboard upgrade` doesn't detect your install method):
+## Known Issues
+* **TUI Lag/Freeze:** You may experience occasional interface lag or freezes during long agent runs.
+  * **Workaround:** Press `Ctrl+C` to terminate the process and relaunch PlanBoard. Session state is continuously preserved on disk, so you will not lose any planning progress.
 
-```bash
-# pipx
-pipx install git+https://github.com/Bhavik-Sheth/PlanBoard.git --force
-
-# uv tool
-uv tool install git+https://github.com/Bhavik-Sheth/PlanBoard.git --force
-```
-
----
-
-## Configuring Your API Key
-
-On first launch, run `/config` in the TUI to set your LLM provider and API key:
-
-```
-/config provider groq
-/config apikey groq YOUR_GROQ_API_KEY
-```
-
-Or set environment variables before launching:
-
-```bash
-export GROQ_API_KEY=your_key_here
-planboard
-```
-
----
-
-## Conversational Actions
-
-Type plain text (no prefix) in the **CHAT INPUT** to chat with the Orchestrator. The orchestrator automatically understands what you want to do:
-
-- **General Chat / Help**: Ask `"How do you work?"`, `"What can you do?"`, or generic questions.
-- **Initialize project**: `"initialize project"` scaffolds the `PLANBOARD/` directory.
-- **Describe project idea**: `"let's plan a python web scraper app"` starts the raw idea structuring.
-- **Run planning pipeline**: `"generate all drafts"` or `"run pipeline"` invokes the graph to draft PRD/TRD/Schema files.
-- **Document change requests**: Select any file in the File View and type your change (e.g. `"change the database to PostgreSQL in TRD.md"` or `"add a section about unit tests to PRD"`). The agent will regenerate the file incorporating your feedback.
-- **Audit consistency**: `"run consistency audit"` looks for contradictions between documents.
-- **Finalize planning**: `"finalize project"` compiles the `PLANBOARD/CLAUDE.md` context document.
-
----
-
-## Slash Commands (Direct Shortcuts)
-
-You can also use slash commands in the Chat Input to trigger actions directly:
-
-- `/help` - Show help menu.
-- `/init` - Scaffold `PLANBOARD/` directory.
-- `/describe <text>` - Appends raw idea and structures it.
-- `/run` - Drafts all project files.
-- `/status` - Render `Tracker.md` file status.
-- `/approve <file>` - Mark a file as approved in `Tracker.md`.
-- `/reset <file>` - Reset a document and re-draft it.
-- `/module add <name>` - Add a module specification under `PLANBOARD/MODULES/`.
-- `/module list` - List module specifications.
-- `/consistency` - Run a read-only document consistency check.
-- `/finalize` - Compile the finalized `CLAUDE.md`.
-- `/config` - Show current active provider, model, and API keys.
-- `/config provider <groq|openai|anthropic|nvidia>` - Set active provider.
-- `/config model <model_name>` - Set active model.
-- `/config apikey <provider> <key>` - Write API key to `.env`.
-- `/abort` - Abort active confirmation prompt or interactive query.
-
----
-
-## Keyboard Controls
-
-| Key | Action |
-|---|---|
-| `Tab` / `Shift+Tab` | Cycle focus between panels (File Tree → Architecture → Viewer → Chat Input) |
-| `↑` / `↓` | Move selection within focused panel (scroll viewer / move in tree) |
-| `→` / `Enter` | Expand folder or open file in Viewer Panel |
-| `←` | Collapse folder |
-| `Esc` | Return focus to Chat Input |
-| `Ctrl+C` / `Ctrl+Q` | Quit PlanBoard cleanly |
-
----
-
-## Development
-
-Run tests:
-```bash
-uv run pytest
-```
-All tests run with mocked API calls and execute locally in under 3 seconds.
+## Contributing
+PlanBoard is early and actively evolving. We welcome feedback, issue reports, and pull requests! Feel free to open a PR or start a discussion.
