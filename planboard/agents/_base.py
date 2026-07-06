@@ -50,6 +50,27 @@ def load_context(state: "PlannerState", *filenames: str) -> dict[str, str]:
     return result
 
 
+def get_global_learnings() -> str:
+    """Read global learnings/preferences from ~/.planboard/skills/learnings.md and return formatted instructions."""
+    learnings_path = Path.home() / ".planboard" / "skills" / "learnings.md"
+    if not learnings_path.exists():
+        return ""
+    try:
+        content = learnings_path.read_text(encoding="utf-8").strip()
+        if not content:
+            return ""
+        # Strip title if present to keep instructions clean
+        lines = content.splitlines()
+        if lines and (lines[0].startswith("# Global Learnings") or lines[0].startswith("# learnings")):
+            lines = lines[1:]
+        clean_content = "\n".join(lines).strip()
+        if not clean_content:
+            return ""
+        return f"\n\nGLOBAL LEARNINGS / USER PREFERENCES (CRITICAL):\nMake sure your output strictly respects the following preferences learned from previous corrections:\n\"\"\"\n{clean_content}\n\"\"\"\n"
+    except Exception:
+        return ""
+
+
 def invoke_llm_safe(messages: list[BaseMessage]) -> str:
     """
     Invoke the configured LLM with retry-on-failure behaviour.
@@ -57,6 +78,15 @@ def invoke_llm_safe(messages: list[BaseMessage]) -> str:
     Returns the response content as a string.
     """
     from planboard.tools import get_llm_client
+    from langchain_core.messages import HumanMessage
+
+    # Inject global learnings if present into the last human message
+    learnings = get_global_learnings()
+    if learnings and messages:
+        for idx in reversed(range(len(messages))):
+            if isinstance(messages[idx], HumanMessage):
+                messages[idx].content = str(messages[idx].content) + learnings
+                break
 
     while True:
         try:

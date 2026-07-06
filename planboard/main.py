@@ -57,8 +57,12 @@ def main(ctx: typer.Context) -> None:
                 from planboard.tools.tracker_tools import initialize_tracker
                 _TRACKER_SEQUENCE = [
                     "StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md",
-                    "Schema.md", "DesignDecisions.md", "AppFlow.md", "Rules.md",
-                    "ImplementationPlan.md", "MODULES/",
+                    "Schema.md", "DesignDecisions.md", "AppFlow.md",
+                    "ARCHITECTURE_DIAGRAMS/SystemDesign.md",
+                    "ARCHITECTURE_DIAGRAMS/SystemArchitecture.md",
+                    "ARCHITECTURE_DIAGRAMS/FolderStructure.md",
+                    "ARCHITECTURE_DIAGRAMS/DataFlow.md",
+                    "Rules.md", "ImplementationPlan.md", "MODULES/",
                 ]
                 scaffold_planboard(str(planboard_dir.parent))
                 initialize_tracker(str(planboard_dir.parent), _TRACKER_SEQUENCE)

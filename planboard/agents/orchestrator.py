@@ -53,6 +53,10 @@ _SEQUENCE = [
     ("schema",          "Schema.md"),
     ("design",          "DesignDecisions.md"),   # conditional on has_frontend
     ("appflow",         "AppFlow.md"),            # conditional on has_frontend
+    ("system_design",       "ARCHITECTURE_DIAGRAMS/SystemDesign.md"),
+    ("system_architecture", "ARCHITECTURE_DIAGRAMS/SystemArchitecture.md"),
+    ("folder_structure",    "ARCHITECTURE_DIAGRAMS/FolderStructure.md"),
+    ("data_flow",           "ARCHITECTURE_DIAGRAMS/DataFlow.md"),
     ("rules",           "Rules.md"),
     ("implementation",  "ImplementationPlan.md"),
 ]
@@ -65,6 +69,10 @@ _TRACKER_SEQUENCE = [
     "Schema.md",
     "DesignDecisions.md",
     "AppFlow.md",
+    "ARCHITECTURE_DIAGRAMS/SystemDesign.md",
+    "ARCHITECTURE_DIAGRAMS/SystemArchitecture.md",
+    "ARCHITECTURE_DIAGRAMS/FolderStructure.md",
+    "ARCHITECTURE_DIAGRAMS/DataFlow.md",
     "Rules.md",
     "ImplementationPlan.md",
     "MODULES/",
@@ -74,14 +82,18 @@ _FRONTEND_AGENTS = {"design", "appflow"}
 
 # Upstream context each agent needs (dependency map)
 _UPSTREAM_MAP: dict[str, list[str]] = {
-    "Constraints.md":        ["StructuredIdea.md"],
-    "PRD.md":                ["StructuredIdea.md", "Constraints.md"],
-    "TRD.md":                ["StructuredIdea.md", "Constraints.md", "PRD.md"],
-    "Schema.md":             ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md"],
-    "DesignDecisions.md":    ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md"],
-    "AppFlow.md":            ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md"],
-    "Rules.md":              ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md", "Schema.md"],
-    "ImplementationPlan.md": ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md", "Schema.md", "Rules.md"],
+    "Constraints.md":                             ["StructuredIdea.md"],
+    "PRD.md":                                     ["StructuredIdea.md", "Constraints.md"],
+    "TRD.md":                                     ["StructuredIdea.md", "Constraints.md", "PRD.md"],
+    "Schema.md":                                  ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md"],
+    "DesignDecisions.md":                         ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md"],
+    "AppFlow.md":                                 ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md"],
+    "ARCHITECTURE_DIAGRAMS/SystemDesign.md":       ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md", "Schema.md", "DesignDecisions.md", "AppFlow.md"],
+    "ARCHITECTURE_DIAGRAMS/SystemArchitecture.md": ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md", "Schema.md", "DesignDecisions.md", "AppFlow.md"],
+    "ARCHITECTURE_DIAGRAMS/FolderStructure.md":    ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md", "Schema.md", "DesignDecisions.md", "AppFlow.md"],
+    "ARCHITECTURE_DIAGRAMS/DataFlow.md":           ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md", "Schema.md", "DesignDecisions.md", "AppFlow.md"],
+    "Rules.md":                                   ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md", "Schema.md"],
+    "ImplementationPlan.md":                      ["StructuredIdea.md", "Constraints.md", "PRD.md", "TRD.md", "Schema.md", "Rules.md"],
 }
 
 # Files to load for consistency check
@@ -447,6 +459,14 @@ class OrchestratorAgent:
 
         # Store the revision request in grill_answers so the agent picks it up
         self.state.grill_answers[f"Change request for {target}"] = request
+
+        # Extract/update global learnings
+        try:
+            from planboard.agents.update_learnings_agent import UpdateLearningsAgent
+            learnings_agent = UpdateLearningsAgent(self.state)
+            learnings_agent.run(target, request)
+        except Exception:
+            pass
         
         # If we are in an update, we should pass the change_context too!
         change_context = None
@@ -710,6 +730,13 @@ class OrchestratorAgent:
         a confirmation_required payload listing the blast radius.  The actual
         execution happens in handle_update_confirmed() after the user says yes.
         """
+        # Extract/update global learnings
+        try:
+            from planboard.agents.update_learnings_agent import UpdateLearningsAgent
+            learnings_agent = UpdateLearningsAgent(self.state)
+            learnings_agent.run("global", text)
+        except Exception:
+            pass
         from planboard.agents.updates_agent import UpdatesAgent
         from planboard.tools.tracker_tools import read_tracker
         from planboard.utils import resolve_agent
@@ -1055,6 +1082,10 @@ _AGENT_REGISTRY: dict[str, str] = {
     "schema":         "planboard.agents.schema_agent.schema_agent",
     "design":         "planboard.agents.design_agent.design_agent",
     "appflow":        "planboard.agents.appflow_agent.appflow_agent",
+    "system_design":       "planboard.agents.system_design_agent.system_design_agent",
+    "system_architecture": "planboard.agents.system_architecture_agent.system_architecture_agent",
+    "folder_structure":    "planboard.agents.folder_structure_agent.folder_structure_agent",
+    "data_flow":           "planboard.agents.data_flow_agent.data_flow_agent",
     "rules":          "planboard.agents.rules_agent.rules_agent",
     "implementation": "planboard.agents.implementation_agent.implementation_agent",
     "modules":        "planboard.agents.module_planner_agent.module_planboard_agent",

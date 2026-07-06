@@ -33,6 +33,10 @@ from planboard.agents.implementation_agent import implementation_agent
 from planboard.agents.griller_agent import griller_agent
 from planboard.agents.tech_stack_agent import tech_stack_agent
 from planboard.agents.module_planner_agent import module_planboard_agent
+from planboard.agents.system_design_agent import system_design_agent
+from planboard.agents.system_architecture_agent import system_architecture_agent
+from planboard.agents.folder_structure_agent import folder_structure_agent
+from planboard.agents.data_flow_agent import data_flow_agent
 
 # --------------------------------------------------------------------------- #
 # Routing functions (read state, return next node name)
@@ -84,14 +88,16 @@ def _route_from_tech_stack(state: PlannerState) -> str:
 # Valid nodes in the graph (tracker removed — demoted to tool calls)
 _VALID_NODES = {
     "orchestrator", "structuring", "constraints", "prd", "trd", "schema",
-    "design", "appflow", "rules", "implementation",
+    "design", "appflow", "system_design", "system_architecture",
+    "folder_structure", "data_flow", "rules", "implementation",
     "modules", "griller", "tech_stack",
 }
 
 # Specialist nodes that route back through orchestrator or to griller
 _SPECIALIST_NODES = {
     "structuring", "constraints", "prd", "trd", "schema",
-    "design", "appflow", "rules", "implementation", "modules",
+    "design", "appflow", "system_design", "system_architecture",
+    "folder_structure", "data_flow", "rules", "implementation", "modules",
 }
 
 
@@ -154,6 +160,10 @@ def build_graph() -> StateGraph:
     g.add_node("schema",          _wrap(schema_agent))
     g.add_node("design",          _wrap(design_agent))
     g.add_node("appflow",         _wrap(appflow_agent))
+    g.add_node("system_design",       _wrap(system_design_agent))
+    g.add_node("system_architecture", _wrap(system_architecture_agent))
+    g.add_node("folder_structure",    _wrap(folder_structure_agent))
+    g.add_node("data_flow",           _wrap(data_flow_agent))
     g.add_node("rules",           _wrap(rules_agent))
     g.add_node("implementation",  _wrap(implementation_agent))
     g.add_node("modules",         _wrap(module_planboard_agent))

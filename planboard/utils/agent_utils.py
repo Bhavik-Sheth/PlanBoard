@@ -13,6 +13,10 @@ _FILE_AGENT_MAP = {
     "Rules.md":              "rules",
     "ImplementationPlan.md": "implementation",
     "Tracker.md":            "tracker",
+    "SystemDesign.md":       "system_design",
+    "SystemArchitecture.md": "system_architecture",
+    "FolderStructure.md":    "folder_structure",
+    "DataFlow.md":           "data_flow",
 }
 
 def resolve_relative_path(planboard_path: Path | str, filename: str) -> str | None:
@@ -98,6 +102,14 @@ def resolve_agent(filename: str) -> str | None:
     
     if filename.startswith("MODULES/"):
         return "modules"
+    if filename == "ARCHITECTURE_DIAGRAMS/SystemDesign.md":
+        return "system_design"
+    if filename == "ARCHITECTURE_DIAGRAMS/SystemArchitecture.md":
+        return "system_architecture"
+    if filename == "ARCHITECTURE_DIAGRAMS/FolderStructure.md":
+        return "folder_structure"
+    if filename == "ARCHITECTURE_DIAGRAMS/DataFlow.md":
+        return "data_flow"
     if filename.startswith("ARCHITECTURE_DIAGRAMS/"):
         return "diagram"
     
